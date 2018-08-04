@@ -1,3 +1,141 @@
+#' col.read
+#'
+#' Loads Collection from Praat in Text or Short text format.
+#' Collection may contain combination of TextGrids, PitchTiers, Pitch objects, and IntensityTiers.
+#'
+#' @param fileName Input file name
+#' @param encoding File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding
+#'
+#' @return Collection object
+#' @export
+#'
+#' @seealso \code{\link{tg.read}}, \code{\link{pt.read}}, \code{\link{pitch.read}}, \code{\link{it.read}}
+#'
+#' @examples
+#' \dontrun{
+#' coll <- col.read("coll_text.Collection")
+#' length(coll)  # number of objects in collection
+#' class(coll[[1]])["type"]  # 1st object type
+#' class(coll[[1]])["name"]  # 1st object name
+#' it <- coll[[1]]  # 1st object
+#' it.plot(it)
+#'
+#' class(coll[[2]])["type"]  # 2nd object type
+#' class(coll[[2]])["name"]  # 2nd object name
+#' tg <- coll[[2]]  # 2nd object
+#' tg.plot(tg)
+#' length(tg)  # number of tiers in TextGrid
+#' tg$word$label
+#'
+#' class(coll[[3]])["type"]  # 3rd object type
+#' class(coll[[3]])["name"]  # 3rd object type
+#' pitch <- coll[[3]]  # 3rd object
+#' names(pitch)
+#' pitch$nx  # number of frames
+#' pitch$t[4]        # time instance of the 4th frame
+#' pitch$frame[[4]]  # 4th frame: pitch candidates
+#' pitch$frame[[4]]$frequency[2]
+#' pitch$frame[[4]]$strength[2]
+#'
+#' class(coll[[4]])["type"]  # 4th object type
+#' class(coll[[4]])["name"]  # 4th object name
+#' pt <- coll[[4]]  # 2nd object
+#' pt.plot(pt)
+#' }
+col.read <- function(fileName, encoding = "UTF-8") {
+    # inspired by Pol van Rijn's function from mPraat toolbox
+
+    if (!isString(fileName)) {
+        stop("Invalid 'fileName' parameter.")
+    }
+
+    if (!isString(encoding)) {
+        stop("Invalid 'encoding' parameter.")
+    }
+
+    if (encoding == "auto") {
+        encoding <- detectEncoding(fileName)
+    }
+
+    if (encoding == "UTF-8") {
+        flines <- readr::read_lines(fileName, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+    } else {
+        fid <- file(fileName, open = "r", encoding = encoding)
+        flines <- readLines(fid)
+        close(fid)
+    }
+
+    if (length(flines) < 3) {
+        stop("This is not a Collection file!")
+    }
+
+    if (flines[2] != "Object class = \"Collection\"") {
+        stop("This is not a Collection file!")
+    }
+
+    r <- flines[4]
+    if (str_contains(r, 'size = ')) {
+        shortFormat <- FALSE
+    } else {
+        shortFormat <- TRUE
+    }
+    nobjects <- getNumberInLine(r, shortFormat) # Read the size, remove eventual spaces
+    collection <- vector("list", nobjects)
+
+    if (!shortFormat) {
+        find <- 6   # ignore "item []: "
+    } else {
+        find <- 5
+    }
+
+    for (s in seqM(1, nobjects)) {
+        if (!shortFormat) {
+            find <- find + 1  # discard item [1]:
+        }
+
+        r <- flines[find]; find <- find + 1
+        if (str_contains(r, "TextGrid")) {
+            objClass <- "TextGrid"
+        } else if (str_contains(r, "PitchTier")) {
+            objClass <- "PitchTier"
+        } else if (str_contains(r, "IntensityTier")) {
+            objClass <- "IntensityTier"
+        } else if (str_contains(r, "Pitch 1")) {
+            objClass <- "Pitch 1"
+        } else if (str_contains(r, "Sound")) {
+            stop("Sound files are currently not supported, because of their inefficient loading and saving duration, rather use WAVE files")
+        } else {
+            stop(paste0("Class not recognized! Line: ", r))
+        }
+
+        name <- getTextInQuotes(flines[find]); find <- find + 1
+
+        if (objClass == "TextGrid") {
+            tg_ind <- tg.read_lines(flines, find)
+            object <- tg_ind[[1]]
+            find <- tg_ind[[2]]
+        } else if (objClass == "PitchTier") {
+            pt_ind <- pt.read_lines(flines, find, collection = TRUE)
+            object <- pt_ind[[1]]
+            find <- pt_ind[[2]]
+        } else if (objClass == "IntensityTier") {
+            it_ind <- it.read_lines(flines, find, collection = TRUE)
+            object <- it_ind[[1]]
+            find <- it_ind[[2]]
+        } else if (objClass == "Pitch 1") {
+            pitch_ind <- pitch.read_lines(flines, find, collection = TRUE)
+            object <- pitch_ind[[1]]
+            find <- pitch_ind[[2]]
+        }
+
+        class(object)["type"] <- objClass
+        class(object)["name"] <- name
+        collection[[s]] <- object
+    }
+
+    return(collection)
+}
+
 #' tg.checkTierInd
 #'
 #' Returns tier index. Input can be either index (number) or tier name (character string).
@@ -53,6 +191,43 @@ tg.checkTierInd <- function(tg, tierInd) {
 }
 
 
+#' detectEncoding
+#'
+#' Detects unicode encoding of Praat text files
+#'
+#' @param fileName Input file name
+#'
+#' @return detected encoding of the text input file
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' detectEncoding("demo/H.TextGrid")
+#' detectEncoding("demo/H_UTF16.TextGrid")
+#' }
+detectEncoding <- function(fileName) {
+    # Inspired by Weirong Chen.
+
+    encodings <- c("UTF-8", "UTF-16", "UTF-16BE", "UTF-16LE")
+    encodingWeight <- numeric(length(encodings))
+
+    for (I in 1:length(encodings)) {
+        encoding <- encodings[I]
+
+        if (encoding == "UTF-8") {
+            flines <- readr::read_lines(fileName, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+        } else {
+            fid <- file(fileName, open = "r", encoding = encoding)
+            flines <- suppressWarnings(readLines(fid))   # does not work with tests/testthat/utf8.TextGrid  :-(
+            close(fid)
+        }
+
+        encodingWeight[I] <- length(grep('Text', flines))
+    }
+
+    return(encodings[which.max(encodingWeight)])
+}
+
 
 #' tg.read
 #'
@@ -61,38 +236,57 @@ tg.checkTierInd <- function(tg, tierInd) {
 #' Labels can may contain quotation marks and new lines.
 #'
 #' @param fileNameTextGrid Input file name
+#' @param encoding File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding
 #'
 #' @return TextGrid object
 #' @export
-#' @seealso \code{\link{tg.write}}, \code{\link{tg.plot}}, \code{\link{tg.repairContinuity}}, \code{\link{tg.createNewTextGrid}}, \code{\link{tg.findLabels}}, \code{\link{tg.duplicateTierMergeSegments}}, \code{\link{pt.read}}, \code{\link{pitch.read}}
+#' @seealso \code{\link{tg.write}}, \code{\link{tg.plot}}, \code{\link{tg.repairContinuity}}, \code{\link{tg.createNewTextGrid}}, \code{\link{tg.findLabels}}, \code{\link{tg.duplicateTierMergeSegments}}, \code{\link{pt.read}}, \code{\link{pitch.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 #'
 #' @examples
 #' \dontrun{
 #' tg <- tg.read("demo/H.TextGrid")
 #' tg.plot(tg)
 #' }
-tg.read <- function(fileNameTextGrid) {
+tg.read <- function(fileNameTextGrid, encoding = "UTF-8") {
     if (!isString(fileNameTextGrid)) {
         stop("Invalid 'fileNameTextGrid' parameter.")
     }
 
-    tg <- list()  # new textgrid
+    if (!isString(encoding)) {
+        stop("Invalid 'encoding' parameter.")
+    }
 
-    # fid <- file(fileNameTextGrid, open = "r", encoding = "UTF-8")
-    # flines <- readLines(fid)
-    flines <- readr::read_lines(fileNameTextGrid, locale = readr::locale(encoding = "UTF-8"))
-    # close(fid)
+    if (encoding == "auto") {
+        encoding <- detectEncoding(fileNameTextGrid)
+    }
+
+    if (encoding == "UTF-8") {
+        flines <- readr::read_lines(fileNameTextGrid, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+    } else {
+        fid <- file(fileNameTextGrid, open = "r", encoding = encoding)
+        flines <- readLines(fid)   # does not work with tests/testthat/utf8.TextGrid  :-(
+        close(fid)
+    }
+
     find <- 4   # index of line to read, we ignore the first three
+
+    tg_ind <- tg.read_lines(flines, find)
+    return(tg_ind[[1]])
+}
+
+
+tg.read_lines <- function(flines, find) {
+    tg <- list()  # new textgrid
 
     xminStr <- flines[find]; find <- find + 1 # xmin
     xmaxStr <- flines[find]; find <- find + 1; # xmax
 
     r <- flines[find]; find <- find + 1; # either "<exists>" -> shorttext or "tiers? <exists> " -> full text format
 
-    if (r == "<exists>") {
-        shortFormat <- TRUE
-    } else if (substr(r, 1, 6) == "tiers?") {
+    if (str_contains(r, "tiers?")) {
         shortFormat <- FALSE
+    } else if (str_contains(r, '<exists>')) {
+        shortFormat <- TRUE
     } else {
         stop("Unknown textgrid format.")
     }
@@ -101,8 +295,8 @@ tg.read <- function(fileNameTextGrid) {
         xmin <- as.numeric(xminStr) # xmin
         xmax <- as.numeric(xmaxStr) # xmax
     } else {
-        xmin <- as.numeric(substr(xminStr, 8, nchar(xminStr))) # xmin
-        xmax <- as.numeric(substr(xmaxStr, 8, nchar(xmaxStr))) # xmax
+        xmin <- as.numeric(substr(strTrim(xminStr), 8, nchar(xminStr))) # xmin
+        xmax <- as.numeric(substr(strTrim(xmaxStr), 8, nchar(xmaxStr))) # xmax
     }
 
     if (shortFormat) {
@@ -202,8 +396,10 @@ tg.read <- function(fileNameTextGrid) {
                     repeat {
                         r <- flines[find]; find <- find + 1
                         nQuotationMarks <- length(str_find(r, '"'))
-                        if (!shortFormat & (nQuotationMarks %% 2 == 1) & !sppasFormat) { # remove whitespace at the end of line, it is only in the case of odd number of quotation marks
-                            r <- substr(r, 1, nchar(r)-1)
+                        if (!shortFormat) {
+                            if ((nQuotationMarks %% 2 == 1) & !sppasFormat) { # remove whitespace at the end of line, it is only in the case of odd number of quotation marks
+                                r <- substr(r, 1, nchar(r)-1)
+                            }
                         }
 
                         if (nQuotationMarks %% 2 == 1  &  stringr::str_sub(r, -1) == '"') {
@@ -228,9 +424,9 @@ tg.read <- function(fileNameTextGrid) {
                                        t1 = tierT1, t2 = tierT2, label = tierLabel)
             actNames <- names(tg)
             proposedName <- tierName
-#             while (proposedName %in% actNames) {
-#                 proposedName <- paste0(proposedName, "2")  # modify already existing name by adding 2 at the end
-#             }
+            #             while (proposedName %in% actNames) {
+            #                 proposedName <- paste0(proposedName, "2")  # modify already existing name by adding 2 at the end
+            #             }
             if (proposedName %in% actNames) {
                 warning(paste0("TextGrid has a duplicate tier name [", proposedName, "]. You should not use the name for indexing to avoid ambiguity."))
             }
@@ -299,8 +495,10 @@ tg.read <- function(fileNameTextGrid) {
                     repeat {
                         r <- flines[find]; find <- find + 1
                         nQuotationMarks <- length(str_find(r, '"'))
-                        if (!shortFormat & (nQuotationMarks %% 2 == 1) & !sppasFormat) { # remove whitespace at the end of line, it is only in the case of odd number of quotation marks
-                            r <- substr(r, 1, nchar(r)-1)
+                        if (!shortFormat) {
+                            if ((nQuotationMarks %% 2 == 1) & !sppasFormat) { # remove whitespace at the end of line, it is only in the case of odd number of quotation marks
+                                r <- substr(r, 1, nchar(r)-1)
+                            }
                         }
 
                         if ((nQuotationMarks %% 2 == 1) & (stringr::str_sub(r, -1) == '"')) {
@@ -343,10 +541,22 @@ tg.read <- function(fileNameTextGrid) {
     class(tg)["tmin"] <- xmin
     class(tg)["tmax"] <- xmax
 
-    return(tg)
+    return(list(tg, find))
 }
 
 
+
+# wrLine
+#
+# Write text line to a connection in binary mode.
+#
+# @param string Text line.
+# @param fid A connection object.
+#
+# @return a raw vector (if fid is a raw vector) or invisibly NULL.
+wrLine <- function(string, fid) {
+    writeBin(c(charToRaw(string), as.raw(c(13, 10))), fid, endian = "little")
+}
 
 
 #' tg.write
@@ -355,10 +565,11 @@ tg.read <- function(fileNameTextGrid) {
 #' tiers (tg[[1]], tg[[2]], tg[[3]], etc.). If tier type is not specified in $type,
 #' is is assumed to be "interval". If specified, $type have to be "interval" or "point".
 #' If there is no class(tg)["tmin"] and class(tg)["tmax"], they are calculated as min and max of
-#' all tiers. The file is saved in Short text file, UTF-8 format.
+#' all tiers. The file is saved in UTF-8 encoding.
 #'
 #' @param tg TextGrid object
 #' @param fileNameTextGrid Output file name
+#' @param format Output file format ("short" (default, short text format) or "text" (a.k.a. full text format))
 #'
 #' @export
 #' @seealso \code{\link{tg.read}}, \code{\link{pt.write}}
@@ -368,10 +579,18 @@ tg.read <- function(fileNameTextGrid) {
 #' tg <- tg.sample()
 #' tg.write(tg, "demo_output.TextGrid")
 #' }
-tg.write <- function(tg, fileNameTextGrid) {
+tg.write <- function(tg, fileNameTextGrid, format = "short") {
     if (!isString(fileNameTextGrid)) {
         stop("Invalid 'fileNameTextGrid' parameter.")
     }
+
+    if (!isString(format)) {
+        stop("Invalid 'format' parameter.")
+    }
+    if (format != "short" && format != "text") {
+        stop("Unsupported format (supported: short [default], text)")
+    }
+
 
     nTiers <- length(tg)  # number of Tiers
 
@@ -412,61 +631,124 @@ tg.write <- function(tg, fileNameTextGrid) {
         }
     }
 
-    fid <- file(fileNameTextGrid, open = "w", encoding = "UTF-8")
+    fid <- file(fileNameTextGrid, open = "wb", encoding = "UTF-8")
     if (!isOpen(fid)) {
         stop(paste0("cannot open file [", fileNameTextGrid, "]"))
     }
 
-    writeLines('File type = "ooTextFile"', fid)
-    writeLines('Object class = "TextGrid"', fid)
-    writeLines("", fid)
-    writeLines(as.character(round2(minTimeTotal, -10)), fid)  # min time from all tiers
-    writeLines(as.character(round2(maxTimeTotal, -10)), fid)  # max time from all tiers
-    writeLines("<exists>", fid)
-    writeLines(as.character(nTiers), fid)
+    wrLine('File type = "ooTextFile"', fid)
+    wrLine('Object class = "TextGrid"', fid)
+    wrLine("", fid)
+    if (format == "short") {
+        wrLine(as.character(round2(minTimeTotal, -15)), fid)  # min time from all tiers
+        wrLine(as.character(round2(maxTimeTotal, -15)), fid)  # max time from all tiers
+        wrLine("<exists>", fid)
+        wrLine(as.character(nTiers), fid)
+    } else if (format == "text") {
+        wrLine(paste0("xmin = ", as.character(round2(minTimeTotal, -15)), " "), fid)  # min time from all tiers
+        wrLine(paste0("xmax = ", as.character(round2(maxTimeTotal, -15)), " "), fid)  # max time from all tiers
+        wrLine("tiers? <exists> ", fid)
+        wrLine(paste0("size = ", as.character(nTiers), " "), fid)
+        wrLine("item []: ", fid)
+    }
 
     for (N in seqM(1, nTiers)) {
+        if (format == "text") {
+            wrLine(paste0("    item [", as.character(N), "]:"), fid)
+        }
+
         if (tg[[N]]$typInt == TRUE) {  # interval tier
-            writeLines('"IntervalTier"', fid)
-            writeLines(paste0('"', tg[[N]]$name, '"'), fid)
+            if (format == "short") {
+                wrLine('"IntervalTier"', fid)
+                wrLine(paste0('"', tg[[N]]$name, '"'), fid)
+            } else if (format == "text") {
+                wrLine('        class = "IntervalTier" ', fid)
+                wrLine(paste0('        name = "', tg[[N]]$name, '" '), fid)
+            }
 
             nInt <- length(tg[[N]]$t1)  # number of intervals
             if (nInt > 0) {
-                writeLines(as.character(round2(tg[[N]]$t1[1], -10)), fid)  # start time of the tier
-                writeLines(as.character(round2(tg[[N]]$t2[length(tg[[N]]$t2)], -10)), fid)  # end time of the tier
-                writeLines(as.character(nInt), fid)  # pocet intervalu textgrid
+                if (format == "short") {
+                    wrLine(as.character(round2(tg[[N]]$t1[1], -15)), fid)  # start time of the tier
+                    wrLine(as.character(round2(tg[[N]]$t2[length(tg[[N]]$t2)], -15)), fid)  # end time of the tier
+                    wrLine(as.character(nInt), fid)  # pocet intervalu textgrid
+                } else if (format == "text") {
+                    wrLine(paste0("        xmin = ", as.character(round2(tg[[N]]$t1[1], -15)), " "), fid)  # start time of the tier
+                    wrLine(paste0("        xmax = ", as.character(round2(tg[[N]]$t2[length(tg[[N]]$t2)], -15)), " "), fid)  # end time of the tier
+                    wrLine(paste0("        intervals: size = ", as.character(nInt), " "), fid)  # pocet intervalu textgrid
+                }
 
                 for (I in seqM(1, nInt)) {
-                    writeLines(as.character(round2(tg[[N]]$t1[I], -10)), fid)
-                    writeLines(as.character(round2(tg[[N]]$t2[I], -10)), fid)
-                    writeLines(paste0('"', tg[[N]]$label[I], '"'), fid)
+                    if (format == "short") {
+                        wrLine(as.character(round2(tg[[N]]$t1[I], -15)), fid)
+                        wrLine(as.character(round2(tg[[N]]$t2[I], -15)), fid)
+                        wrLine(paste0('"', tg[[N]]$label[I], '"'), fid)
+                    } else if (format == "text") {
+                        wrLine(paste0("        intervals [", as.character(I), "]:"), fid)
+                        wrLine(paste0("            xmin = ", as.character(round2(tg[[N]]$t1[I], -15)), " "), fid)
+                        wrLine(paste0("            xmax = ", as.character(round2(tg[[N]]$t2[I], -15)), " "), fid)
+                        wrLine(paste0('            text = "', tg[[N]]$label[I], '" '), fid)
+                    }
                 }
             } else {   # create one empty interval
-                writeLines(as.character(round2(minTimeTotal, -10)), fid)  # start time of the tier
-                writeLines(as.character(round2(maxTimeTotal, -10)), fid)  # end time of the tier
-                writeLines("1", fid)  # number of intervals
-                writeLines(as.character(round2(minTimeTotal, -10)), fid)
-                writeLines(as.character(round2(maxTimeTotal, -10)), fid)
-                writeLines('""', fid)
+                if (format == "short") {
+                    wrLine(as.character(round2(minTimeTotal, -15)), fid)  # start time of the tier
+                    wrLine(as.character(round2(maxTimeTotal, -15)), fid)  # end time of the tier
+                    wrLine("1", fid)  # number of intervals
+                    wrLine(as.character(round2(minTimeTotal, -15)), fid)
+                    wrLine(as.character(round2(maxTimeTotal, -15)), fid)
+                    wrLine('""', fid)
+                } else if (format == "text") {
+                    wrLine(paste0("        xmin = ", as.character(round2(minTimeTotal, -15)), " "), fid)  # start time of the tier
+                    wrLine(paste0("        xmax = ", as.character(round2(maxTimeTotal, -15)), " "), fid)  # end time of the tier
+                    wrLine("        intervals: size = 1 ", fid)  # number of intervals
+                    wrLine("        intervals [1]:", fid)
+                    wrLine(paste0("            xmin = ", as.character(round2(minTimeTotal, -15)), " "), fid)
+                    wrLine(paste0("            xmax = ", as.character(round2(maxTimeTotal, -15)), " "), fid)
+                    wrLine('            text = "" ', fid)
+                }
             }
         } else { # pointTier
-            writeLines('"TextTier"', fid)
-            writeLines(paste0('"', tg[[N]]$name, '"'), fid)
+            if (format == "short") {
+                wrLine('"TextTier"', fid)
+                wrLine(paste0('"', tg[[N]]$name, '"'), fid)
+            } else if (format == "text") {
+                wrLine('        class = "TextTier" ', fid)
+                wrLine(paste0('        name = "', tg[[N]]$name, '" '), fid)
+            }
 
-            nInt <- length(tg[[N]]$t)  # number of intervals
+            nInt <- length(tg[[N]]$t)  # number of points
             if (nInt > 0) {
-                writeLines(as.character(round2(tg[[N]]$t[1], -10)), fid)  # start time of the tier
-                writeLines(as.character(round2(tg[[N]]$t[length(tg[[N]]$t)], -10)), fid)  # end time of the tier
-                writeLines(as.character(nInt), fid)  # number of points
+                if (format == "short") {
+                    wrLine(as.character(round2(tg[[N]]$t[1], -15)), fid)  # start time of the tier
+                    wrLine(as.character(round2(tg[[N]]$t[length(tg[[N]]$t)], -15)), fid)  # end time of the tier
+                    wrLine(as.character(nInt), fid)  # number of points
+                } else if (format == "text") {
+                    wrLine(paste0("        xmin = ", as.character(round2(tg[[N]]$t[1], -15)), " "), fid)  # start time of the tier
+                    wrLine(paste0("        xmax = ", as.character(round2(tg[[N]]$t[length(tg[[N]]$t)], -15)), " "), fid)  # end time of the tier
+                    wrLine(paste0("        points: size = ", as.character(nInt), " "), fid)  # number of points
+                }
 
                 for (I in seqM(1, nInt)) {
-                    writeLines(as.character(round2(tg[[N]]$t[I], -10)), fid)
-                    writeLines(paste0('"', tg[[N]]$label[I], '"'), fid)
+                    if (format == "short") {
+                        wrLine(as.character(round2(tg[[N]]$t[I], -15)), fid)
+                        wrLine(paste0('"', tg[[N]]$label[I], '"'), fid)
+                    } else if (format == "text") {
+                        wrLine(paste0("        points [", as.character(I), "]:"), fid)
+                        wrLine(paste0("            number = ", as.character(round2(tg[[N]]$t[I], -15)), " "), fid)
+                        wrLine(paste0('            mark = "', tg[[N]]$label[I], '" '), fid)
+                    }
                 }
-            } else { # prazdny pointtier
-                writeLines(as.character(round2(minTimeTotal, -10)), fid)  # start time of the tier
-                writeLines(as.character(round2(maxTimeTotal, -10)), fid)  # end time of the tier
-                writeLines("0", fid)  # number of points
+            } else { # empty pointtier
+                if (format == "short") {
+                    wrLine(as.character(round2(minTimeTotal, -15)), fid)  # start time of the tier
+                    wrLine(as.character(round2(maxTimeTotal, -15)), fid)  # end time of the tier
+                    wrLine("0", fid)  # number of points
+                } else if (format == "text") {
+                    wrLine(paste0("        xmin = ", as.character(round2(minTimeTotal, -15)), " "), fid)  # start time of the tier
+                    wrLine(paste0("        xmax = ", as.character(round2(maxTimeTotal, -15)), " "), fid)  # end time of the tier
+                    wrLine("        points: size = 0 ", fid)  # number of points
+                }
             }
         }
 
@@ -606,7 +888,7 @@ tg.plot <- function(tg, group = "") {
 #' cannot be manually moved in Praat edit window.
 #'
 #' @param tg TextGrid object
-#' @param verbose [optional, default=FALSE] If TRUE, the function performs everything quietly.
+#' @param verbose [optional, default=TRUE] If FALSE, the function performs everything quietly.
 #'
 #' @return TextGrid object
 #' @export
@@ -618,13 +900,13 @@ tg.plot <- function(tg, group = "") {
 #' tgNew <- tg.repairContinuity(tgProblem)
 #' tg.write(tgNew, "demo_problem_OK.TextGrid")
 #' }
-tg.repairContinuity <- function(tg, verbose = FALSE) {
+tg.repairContinuity <- function(tg, verbose = TRUE) {
     for (I in seqM(1, length(tg))) {
         if (tg[[I]]$type == "interval") {
             for (J in seqM(1, length(tg[[I]]$label)-1)) {
                 if (tg[[I]]$t2[J] != tg[[I]]$t1[J+1]) {
                     newVal <- mean(c(tg[[I]]$t2[J], tg[[I]]$t1[J+1]))
-                    if (!verbose) {
+                    if (verbose) {
                         cat("Problem found [tier: ", I, ", int: ", J, ", ", J+1, "] t2 = ", as.character(tg[[I]]$t2[J]), ", t1 = ", as.character(tg[[I]]$t1[J+1]), ". New value: ", as.character(newVal), ".\n", sep = "")
                     }
 
@@ -1002,7 +1284,8 @@ tg.duplicateTierMergeSegments <- function(tg, originalInd, newInd = Inf, newTier
                     "actual labels: [", collapsed, "]"))
     }
 
-    parts <- unlist(strsplit(pattern, split = sep, fixed = TRUE))
+    # parts <- unlist(strsplit(pattern, split = sep, fixed = TRUE))   #  ('-a--a-', '-')   ->  ""  "a" "" "a"
+    parts <- unlist(stringr::str_split(pattern, stringr::coll(sep)))  #  ('-a--a-', '-')   ->  ""  "a" "" "a" ""
 
     t1 <- numeric(0)  #
     t2 <- numeric(0)  #
@@ -2771,6 +3054,198 @@ tg.findLabels <- function(tg, tierInd, labelVector, returnTime = FALSE) {
 }
 
 
+#' tg.cut
+#'
+#' Cut the specified time frame from the TextGrid and preserve time
+#'
+#' @param tg TextGrid object
+#' @param tStart beginning time of time frame to be cut (default -Inf = cut from the tmin of the TextGrid)
+#' @param tEnd final time of time frame to be cut (default Inf = cut to the tmax of the TextGrid)
+#'
+#' @return TextGrid object
+#' @export
+#' @seealso \code{\link{tg.cut0}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{tg.read}}, \code{\link{tg.plot}}, \code{\link{tg.write}}, \code{\link{tg.insertInterval}}
+#'
+#' @examples
+#' tg <- tg.sample()
+#' tg2 <-   tg.cut(tg,  tStart = 3)
+#' tg2_0 <- tg.cut0(tg, tStart = 3)
+#' tg3 <-   tg.cut(tg,  tStart = 2, tEnd = 3)
+#' tg3_0 <- tg.cut0(tg, tStart = 2, tEnd = 3)
+#' tg4 <-   tg.cut(tg,  tEnd = 1)
+#' tg4_0 <- tg.cut0(tg, tEnd = 1)
+#' tg5 <-   tg.cut(tg,  tStart = -1, tEnd = 5)
+#' tg5_0 <- tg.cut0(tg, tStart = -1, tEnd = 5)
+#' \dontrun{
+#' tg.plot(tg)
+#' tg.plot(tg2)
+#' tg.plot(tg2_0)
+#' tg.plot(tg3)
+#' tg.plot(tg3_0)
+#' tg.plot(tg4)
+#' tg.plot(tg4_0)
+#' tg.plot(tg5)
+#' tg.plot(tg5_0)
+#' }
+tg.cut <- function(tg, tStart = -Inf, tEnd = Inf) {
+    if (!isNum(tStart)) {
+        stop("tStart must be a number.")
+    }
+    if (!isNum(tEnd)) {
+        stop("tEnd must be a number.")
+    }
+    if (is.infinite(tStart) & tStart>0) {
+        stop("infinite tStart can be negative only")
+    }
+    if (is.infinite(tEnd) & tEnd<0) {
+        stop("infinite tEnd can be positive only")
+    }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
+    }
+
+    ntiers <- length(tg)
+    tmin <- as.numeric(class(tg)["tmin"])
+    tmax <- as.numeric(class(tg)["tmax"])
+
+    tgNew <- tg
+
+    for (I in rPraat::seqM(1, ntiers)) {
+        if (tgNew[[I]]$type == "point") {
+            sel <- tg[[I]]$t >= tStart  &  tg[[I]]$t <= tEnd
+            tgNew[[I]]$t     <-     tg[[I]]$t[sel]
+            tgNew[[I]]$label <- tg[[I]]$label[sel]
+        } else if (tgNew[[I]]$type == "interval") {
+            sel <- (tg[[I]]$t1 >= tStart & tg[[I]]$t2 <= tEnd) | (tStart >= tg[[I]]$t1 & tEnd <= tg[[I]]$t2) | (tg[[I]]$t2 > tStart & tg[[I]]$t2 <= tEnd) | (tg[[I]]$t1 >= tStart & tg[[I]]$t1 < tEnd)
+            tgNew[[I]]$t1    <-    tg[[I]]$t1[sel]
+            tgNew[[I]]$t2    <-    tg[[I]]$t2[sel]
+            tgNew[[I]]$label <- tg[[I]]$label[sel]
+
+            tgNew[[I]]$t1[tgNew[[I]]$t1 < tStart] <- tStart
+            tgNew[[I]]$t2[tgNew[[I]]$t2 > tEnd] <- tEnd
+        } else {
+            stop(paste0("unknown tier type:", tgNew[[I]]$type))
+        }
+    }
+
+    if (is.infinite(tStart)) {
+        class(tgNew)["tmin"] <- min(tmin, tEnd)
+    } else {
+        class(tgNew)["tmin"] <- tStart
+    }
+
+    if (is.infinite(tEnd)) {
+        class(tgNew)["tmax"] <- max(tmax, tStart)
+    } else {
+        class(tgNew)["tmax"] <- tEnd
+    }
+
+
+
+    return(tgNew)
+}
+
+
+#' tg.cut0
+#'
+#' Cut the specified time frame from the TextGrid and shift time so that the new tmin = 0
+#'
+#' @param tg TextGrid object
+#' @param tStart beginning time of time frame to be cut (default -Inf = cut from the tmin of the TextGrid)
+#' @param tEnd final time of time frame to be cut (default Inf = cut to the tmax of the TextGrid)
+#'
+#' @return TextGrid object
+#' @export
+#' @seealso \code{\link{tg.cut}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{tg.read}}, \code{\link{tg.plot}}, \code{\link{tg.write}}, \code{\link{tg.insertInterval}}
+#'
+#' @examples
+#' tg <- tg.sample()
+#' tg2 <-   tg.cut(tg,  tStart = 3)
+#' tg2_0 <- tg.cut0(tg, tStart = 3)
+#' tg3 <-   tg.cut(tg,  tStart = 2, tEnd = 3)
+#' tg3_0 <- tg.cut0(tg, tStart = 2, tEnd = 3)
+#' tg4 <-   tg.cut(tg,  tEnd = 1)
+#' tg4_0 <- tg.cut0(tg, tEnd = 1)
+#' tg5 <-   tg.cut(tg,  tStart = -1, tEnd = 5)
+#' tg5_0 <- tg.cut0(tg, tStart = -1, tEnd = 5)
+#' \dontrun{
+#' tg.plot(tg)
+#' tg.plot(tg2)
+#' tg.plot(tg2_0)
+#' tg.plot(tg3)
+#' tg.plot(tg3_0)
+#' tg.plot(tg4)
+#' tg.plot(tg4_0)
+#' tg.plot(tg5)
+#' tg.plot(tg5_0)
+#' }
+tg.cut0 <- function(tg, tStart = -Inf, tEnd = Inf) {
+    if (!isNum(tStart)) {
+        stop("tStart must be a number.")
+    }
+    if (!isNum(tEnd)) {
+        stop("tEnd must be a number.")
+    }
+    if (is.infinite(tStart) & tStart>0) {
+        stop("infinite tStart can be negative only")
+    }
+    if (is.infinite(tEnd) & tEnd<0) {
+        stop("infinite tEnd can be positive only")
+    }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
+    }
+
+    ntiers <- length(tg)
+    tmin <- as.numeric(class(tg)["tmin"])
+    tmax <- as.numeric(class(tg)["tmax"])
+
+    tgNew <- tg
+
+    if (is.infinite(tStart)) {
+        class(tgNew)["tmin"] <- min(tmin, tEnd)
+    } else {
+        class(tgNew)["tmin"] <- tStart
+    }
+
+    if (is.infinite(tEnd)) {
+        class(tgNew)["tmax"] <- max(tmax, tStart)
+    } else {
+        class(tgNew)["tmax"] <- tEnd
+    }
+
+    tNewMin <- tg.getStartTime(tgNew)
+    tNewMax <- tg.getEndTime(tgNew)
+
+    for (I in rPraat::seqM(1, ntiers)) {
+        if (tgNew[[I]]$type == "point") {
+            sel <- tg[[I]]$t >= tStart  &  tg[[I]]$t <= tEnd
+            tgNew[[I]]$t     <-     tg[[I]]$t[sel] - tNewMin
+            tgNew[[I]]$label <- tg[[I]]$label[sel]
+        } else if (tgNew[[I]]$type == "interval") {
+            sel <- (tg[[I]]$t1 >= tStart & tg[[I]]$t2 <= tEnd) | (tStart >= tg[[I]]$t1 & tEnd <= tg[[I]]$t2) | (tg[[I]]$t2 > tStart & tg[[I]]$t2 <= tEnd) | (tg[[I]]$t1 >= tStart & tg[[I]]$t1 < tEnd)
+            tgNew[[I]]$t1    <-    tg[[I]]$t1[sel]
+            tgNew[[I]]$t2    <-    tg[[I]]$t2[sel]
+            tgNew[[I]]$label <- tg[[I]]$label[sel]
+
+            tgNew[[I]]$t1[tgNew[[I]]$t1 < tStart] <- tStart
+            tgNew[[I]]$t2[tgNew[[I]]$t2 > tEnd] <- tEnd
+
+            tgNew[[I]]$t1 <- tgNew[[I]]$t1 - tNewMin
+            tgNew[[I]]$t2 <- tgNew[[I]]$t2 - tNewMin
+        } else {
+            stop(paste0("unknown tier type:", tgNew[[I]]$type))
+        }
+    }
+
+    class(tgNew)["tmin"] <- 0
+    class(tgNew)["tmax"] <- tNewMax - tNewMin
+
+    return(tgNew)
+}
+
+
+
 
 
 #' pitch.read
@@ -2779,6 +3254,7 @@ tg.findLabels <- function(tg, tierInd, labelVector, returnTime = FALSE) {
 #' Supported formats: text file, short text file.
 #'
 #' @param fileNamePitch file name of Pitch object
+#' @param encoding File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding
 #'
 #' @return A Pitch object represents periodicity candidates as a function of time.
 #' @return   [ref: Praat help, http://www.fon.hum.uva.nl/praat/manual/Pitch.html]
@@ -2797,7 +3273,7 @@ tg.findLabels <- function(tg, tierInd, labelVector, returnTime = FALSE) {
 #' @return                               (for a voiced candidate), or 0 (for an unvoiced candidate)
 #' @return      p$frame[[1]]$strength  ... vector of degrees of periodicity of candidates (between 0 and 1)
 #' @export
-#' @seealso \code{\link{pt.read}}, \code{\link{tg.read}}
+#' @seealso \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 #'
 #' @examples
 #' \dontrun{
@@ -2809,64 +3285,85 @@ tg.findLabels <- function(tg, tierInd, labelVector, returnTime = FALSE) {
 #' p$frame[[4]]$frequency[2]
 #' p$frame[[4]]$strength[2]
 #' }
-pitch.read <- function(fileNamePitch) {
+pitch.read <- function(fileNamePitch, encoding = "UTF-8") {
     if (!isString(fileNamePitch)) {
         stop("Invalid 'fileNamePitch' parameter.")
     }
 
-    # fid <- file(fileNamePitchTier, open = "r", encoding = "UTF-8")
-    # flines <- readLines(fid)
-    flines <- readr::read_lines(fileNamePitch, locale = readr::locale(encoding = "UTF-8"))
-    # close(fid)
+    if (!isString(encoding)) {
+        stop("Invalid 'encoding' parameter.")
+    }
+
+    if (encoding == "auto") {
+        encoding <- detectEncoding(fileNamePitch)
+    }
+
+    if (encoding == "UTF-8") {
+        flines <- readr::read_lines(fileNamePitch, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+    } else {
+        fid <- file(fileNamePitch, open = "r", encoding = encoding)
+        flines <- readLines(fid)   # does not work with tests/testthat/utf8.TextGrid  :-(
+        close(fid)
+    }
 
     if (length(flines) < 1) {
         stop("Empty file.")
     }
 
-    if (flines[1] == "File type = \"ooTextFile\"") {    # TextFile or shortTextFile
-        if (length(flines) < 11) {
-            stop("Unknown Pitch format.")
-        }
+    pitch_ind <- pitch.read_lines(flines)
+    return(pitch_ind[[1]])
+}
 
-        if (flines[2] != "Object class = \"Pitch 1\"") {
-            stop("Unknown Pitch format.")
-        }
 
-        if (flines[3] != "") {
-            stop("Unknown Pitch format.")
-        }
-
-        if (nchar(flines[4]) < 1) {
-            stop("Unknown Pitch format.")
-        }
-
-        if (stringr::str_sub(flines[4], 1, 1) == "x") {  # TextFile
-            xmin <- as.numeric(substr(flines[4], 8, nchar(flines[4])))
-            xmax <- as.numeric(substr(flines[5], 8, nchar(flines[5])))
-            nx <- as.numeric(substr(flines[6], 6, nchar(flines[6])))
-            dx <- as.numeric(substr(flines[7], 6, nchar(flines[7])))
-            x1 <- as.numeric(substr(flines[8], 6, nchar(flines[8])))
-            ceil <- as.numeric(substr(flines[9], 11, nchar(flines[9])))
-            maxnCandidates <- as.numeric(substr(flines[10], 18, nchar(flines[10])))
-
-            frame <- vector("list", nx)
-
-            if (flines[11] != "frame []: ") {
+pitch.read_lines <- function(flines, find = 1, collection = FALSE) {
+    if (collection  ||  flines[find-1+ 1] == "File type = \"ooTextFile\"") {    # TextFile or shortTextFile
+        if (!collection) {
+            if (length(flines)-find+1 < 11) {
                 stop("Unknown Pitch format.")
             }
 
-            iline <- 12  # index of line to read
+            if (flines[find-1+ 2] != "Object class = \"Pitch 1\"") {
+                stop("Unknown Pitch format.")
+            }
+
+            if (flines[find-1+ 3] != "") {
+                stop("Unknown Pitch format.")
+            }
+
+            if (nchar(flines[find-1+ 4]) < 1) {
+                stop("Unknown Pitch format.")
+            }
+        } else {
+            find <- find - 3
+        }
+
+        if (str_contains(flines[find-1+ 4], "xmin")) {  # TextFile
+            xmin <- as.numeric(          substr(strTrim(flines[find-1+ 4]),   8, nchar(strTrim(flines[find-1+ 4]))))
+            xmax <- as.numeric(          substr(strTrim(flines[find-1+ 5]),   8, nchar(strTrim(flines[find-1+ 5]))))
+            nx <- as.numeric(            substr(strTrim(flines[find-1+ 6]),   6, nchar(strTrim(flines[find-1+ 6]))))
+            dx <- as.numeric(            substr(strTrim(flines[find-1+ 7]),   6, nchar(strTrim(flines[find-1+ 7]))))
+            x1 <- as.numeric(            substr(strTrim(flines[find-1+ 8]),   6, nchar(strTrim(flines[find-1+ 8]))))
+            ceil <- as.numeric(          substr(strTrim(flines[find-1+ 9]),  11, nchar(strTrim(flines[find-1+ 9]))))
+            maxnCandidates <- as.numeric(substr(strTrim(flines[find-1+ 10]), 18, nchar(strTrim(flines[find-1+ 10]))))
+
+            frame <- vector("list", nx)
+
+            if (!str_contains(flines[find-1+ 11], "frame []: ")) {
+                stop("Unknown Pitch format.")
+            }
+
+            iline <- find-1+ 12  # index of line to read
 
             for (I in seqM(1, nx)) {
-                if (flines[iline] != paste0("    frame [", I, "]:")) {
+                if (strTrim(flines[iline]) != paste0("frame [", I, "]:")) {
                     stop(paste0("Unknown Pitch format, wrong frame id (", I, "')."))
                 }
                 iline <- iline + 1
 
-                intensity <- as.numeric(substr(flines[iline], 21, nchar(flines[iline]))); iline <- iline + 1
-                nCandidates <- as.numeric(substr(flines[iline], 23, nchar(flines[iline]))); iline <- iline + 1
+                intensity <- as.numeric(substr(strTrim(flines[iline]), 13, nchar(strTrim(flines[iline])))); iline <- iline + 1
+                nCandidates <- as.numeric(substr(strTrim(flines[iline]), 15, nchar(strTrim(flines[iline])))); iline <- iline + 1
 
-                if (flines[iline] != "        candidate []: ") {
+                if (!str_contains(flines[iline], "candidate []:")) {
                     stop("Unknown Pitch format.")
                 }
                 iline <- iline + 1
@@ -2875,13 +3372,13 @@ pitch.read <- function(fileNamePitch) {
                 strength <- numeric(nCandidates)
 
                 for (Ic in seqM(1, nCandidates)) {
-                    if (flines[iline] != paste0("            candidate [", Ic, "]:")) {
+                    if (strTrim(flines[iline]) != paste0("candidate [", Ic, "]:")) {
                         stop(paste0("Unknown Pitch format, wrong candidate nr. (", Ic, ") in frame id (", I, "')."))
                     }
                     iline <- iline + 1
 
-                    frequency[Ic] <- as.numeric(substr(flines[iline], 29, nchar(flines[iline]))); iline <- iline + 1
-                    strength[Ic] <-  as.numeric(substr(flines[iline], 28, nchar(flines[iline]))); iline <- iline + 1
+                    frequency[Ic] <- as.numeric(substr(strTrim(flines[iline]), 13, nchar(strTrim(flines[iline])))); iline <- iline + 1
+                    strength[Ic] <-  as.numeric(substr(strTrim(flines[iline]), 12, nchar(strTrim(flines[iline])))); iline <- iline + 1
                 }
 
                 frame[[I]] <- list(intensity = intensity, nCandidates = nCandidates,
@@ -2889,17 +3386,17 @@ pitch.read <- function(fileNamePitch) {
             }
 
         } else {   # shortTextFile
-            xmin <- as.numeric(flines[4])
-            xmax <- as.numeric(flines[5])
-            nx <- as.numeric(flines[6])
-            dx <- as.numeric(flines[7])
-            x1 <- as.numeric(flines[8])
-            ceil <- as.numeric(flines[9])
-            maxnCandidates <- as.numeric(flines[10])
+            xmin <- as.numeric(flines[find-1+ 4])
+            xmax <- as.numeric(flines[find-1+ 5])
+            nx <- as.numeric(flines[find-1+ 6])
+            dx <- as.numeric(flines[find-1+ 7])
+            x1 <- as.numeric(flines[find-1+ 8])
+            ceil <- as.numeric(flines[find-1+ 9])
+            maxnCandidates <- as.numeric(flines[find-1+ 10])
 
             frame <- vector("list", nx)
 
-            iline <- 11  # index of line to read
+            iline <- find-1+ 11  # index of line to read
 
             for (I in seqM(1, nx)) {
                 intensity <- as.numeric(flines[iline]); iline <- iline + 1
@@ -2927,53 +3424,74 @@ pitch.read <- function(fileNamePitch) {
               ceiling = ceil, maxnCandidates = maxnCandidates,
               frame = frame)
 
-    return(p)
+    return(list(p, iline))
 }
-
 
 
 
 #' pt.read
 #'
 #' Reads PitchTier from Praat. Supported formats: text file, short text file,
-#' spread sheet, headerless spread sheet (headerless not recommended,
+#' spreadsheet, headerless spreadsheet (headerless not recommended,
 #' it does not contain tmin and tmax info).
 #'
 #' @param fileNamePitchTier file name of PitchTier
+#' @param encoding File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding
 #'
 #' @return PitchTier object
 #' @export
-#' @seealso \code{\link{pt.write}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{pt.interpolate}}, \code{\link{tg.read}}, \code{\link{pitch.read}}
+#' @seealso \code{\link{pt.write}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{pt.interpolate}}, \code{\link{pt.legendre}}, \code{\link{tg.read}}, \code{\link{pitch.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 #'
 #' @examples
 #' \dontrun{
 #' pt <- pt.read("demo/H.PitchTier")
 #' pt.plot(pt)
 #' }
-pt.read <- function(fileNamePitchTier) {
+pt.read <- function(fileNamePitchTier, encoding = "UTF-8") {
     if (!isString(fileNamePitchTier)) {
         stop("Invalid 'fileNamePitchTier' parameter.")
     }
 
-    # fid <- file(fileNamePitchTier, open = "r", encoding = "UTF-8")
-    # flines <- readLines(fid)
-    flines <- readr::read_lines(fileNamePitchTier, locale = readr::locale(encoding = "UTF-8"))
-    # close(fid)
+    if (!isString(encoding)) {
+        stop("Invalid 'encoding' parameter.")
+    }
+
+    if (encoding == "auto") {
+        encoding <- detectEncoding(fileNamePitchTier)
+    }
+
+    if (encoding == "UTF-8") {
+        flines <- readr::read_lines(fileNamePitchTier, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+    } else {
+        fid <- file(fileNamePitchTier, open = "r", encoding = encoding)
+        flines <- readLines(fid)   # does not work with tests/testthat/utf8.TextGrid  :-(
+        close(fid)
+    }
+
 
     if (length(flines) < 1) {
         stop("Empty file.")
     }
 
-    if (flines[1] == "\"ooTextFile\"") {    # spreadSheet
-        if (length(flines) < 3) {
+    pt_ind <- pt.read_lines(flines)
+    return(pt_ind[[1]])
+}
+
+pt.read_lines <- function(flines, find = 1, collection = FALSE) {
+    if (flines[find-1+1] == "\"ooTextFile\"") {    # spreadSheet - cannot be in collection file
+        if (collection) {
+            stop("unsupported PitchTier format (SpreadSheet) in collection")
+        }
+
+        if (length(flines)-find+1 < 3) {
             stop("Unknown PitchTier format.")
         }
 
-        if (flines[2] != "\"PitchTier\"") {
+        if (flines[find-1+2] != "\"PitchTier\"") {
             stop("Unknown PitchTier format.")
         }
 
-        fromToN <- stringr::str_split(flines[3], " ")
+        fromToN <- stringr::str_split(flines[find-1+3], " ")
         if (length(fromToN[[1]]) != 3) {
             stop("Unknown PitchTier format.")
         }
@@ -2988,7 +3506,7 @@ pt.read <- function(fileNamePitchTier) {
         f <- numeric(N)
 
         for (I in seqM(1, N, by = 1)) {
-            tf <- stringr::str_split(flines[I+3], "\\s")
+            tf <- stringr::str_split(flines[find-1+I+3], "\\s")
             if (length(tf[[1]]) != 2) {
                 stop("Unknown PitchTier format.")
             }
@@ -2997,59 +3515,70 @@ pt.read <- function(fileNamePitchTier) {
         }
 
 
-    } else if (flines[1] == "File type = \"ooTextFile\"") {    # TextFile or shortTextFile
-        if (length(flines) < 6) {
-            stop("Unknown PitchTier format.")
-        }
-
-        if (flines[2] != "Object class = \"PitchTier\"") {
-            stop("Unknown PitchTier format.")
-        }
-
-        if (flines[3] != "") {
-            stop("Unknown PitchTier format.")
-        }
-
-        if (nchar(flines[4]) < 1) {
-            stop("Unknown PitchTier format.")
-        }
-
-        if (stringr::str_sub(flines[4], 1, 1) == "x") {  # TextFile
-            xmin <- as.numeric(substr(flines[4], 8, nchar(flines[4])))
-            xmax <- as.numeric(substr(flines[5], 8, nchar(flines[5])))
-            N <-    as.numeric(substr(flines[6], 16, nchar(flines[6])))
-
-            if (N != (length(flines)-6)/3) {
-                stop("Wrong number of points in PitchTier format.")
+    } else if (collection  ||  flines[find-1+1] == "File type = \"ooTextFile\"") {    # TextFile or shortTextFile - only these 2 formats can be stored in collection file
+        if (!collection) {
+            if (length(flines)-find+1 < 6) {
+                stop("Unknown PitchTier format.")
             }
+
+            if (strTrim(flines[find-1+2]) != "Object class = \"PitchTier\"") {
+                stop("Unknown PitchTier format.")
+            }
+
+            if (strTrim(flines[find-1+3]) != "") {
+                stop("Unknown PitchTier format.")
+            }
+
+            if (strTrim(nchar(flines[find-1+4])) < 1) {
+                stop("Unknown PitchTier format.")
+            }
+        } else {
+            find <- find - 3
+        }
+
+        if (str_contains(flines[find-1+4], "xmin")) {  # TextFile
+            xmin <- as.numeric(substr(strTrim(flines[find-1+4]), 8,  nchar(strTrim(flines[find-1+4]))))
+            xmax <- as.numeric(substr(strTrim(flines[find-1+5]), 8,  nchar(strTrim(flines[find-1+5]))))
+            N <-    as.numeric(substr(strTrim(flines[find-1+6]), 16, nchar(strTrim(flines[find-1+6]))))
+
+            # if (N != (length(flines)-6)/3) {
+            #     stop("Wrong number of points in PitchTier format.")
+            # }
             t <- numeric(N)
             f <- numeric(N)
 
             for (I in seqM(1, N, by = 1)) {
-                t[I] <- as.numeric(substr(flines[8 + (I-1)*3], 14, nchar(flines[8 + (I-1)*3])))
-                f[I] <- as.numeric(substr(flines[9 + (I-1)*3], 13, nchar(flines[9 + (I-1)*3])))
+                t[I] <- as.numeric(substr(strTrim(flines[find-1+8 + (I-1)*3]), 10, nchar(strTrim(flines[find-1+8 + (I-1)*3]))))
+                f[I] <- as.numeric(substr(strTrim(flines[find-1+9 + (I-1)*3]), 9, nchar(strTrim(flines[find-1+9 + (I-1)*3]))))
             }
+
+            find <- find-1+9 + (N-1)*3 + 1
 
         } else {   # shortTextFile
 
-            xmin <- as.numeric(flines[4])
-            xmax <- as.numeric(flines[5])
-            N <- as.integer(flines[6])
+            xmin <- as.numeric(flines[find-1+4])
+            xmax <- as.numeric(flines[find-1+5])
+            N <- as.integer(flines[find-1+6])
 
-            if (N != (length(flines)-6)/2) {
-                stop("Wrong number of points in PitchTier format.")
-            }
+            # if (N != (length(flines)-6)/2) {
+            #     stop("Wrong number of points in PitchTier format.")
+            # }
             t <- numeric(N)
             f <- numeric(N)
 
             for (I in seqM(1, N, by = 1)) {
-                t[I] <- as.numeric(flines[7 + (I-1)*2])
-                f[I] <- as.numeric(flines[8 + (I-1)*2])
+                t[I] <- as.numeric(flines[find-1+7 + (I-1)*2])
+                f[I] <- as.numeric(flines[find-1+8 + (I-1)*2])
             }
+
+            find <- find-1+8 + (N-1)*2 + 1
         }
 
 
-    } else {   # headerless SpreadSheet
+    } else {   # headerless SpreadSheet - cannot be in collection file
+        if (collection) {
+            stop("unsupported PitchTier format (headerless SpreadSheet) in collection")
+        }
 
         N <- length(flines)
 
@@ -3072,20 +3601,21 @@ pt.read <- function(fileNamePitchTier) {
 
     pt <- list(t = t, f = f, tmin = xmin, tmax = xmax)
 
-    return(pt)
+    return(list(pt, find))
 }
 
 
 
 #' pt.write
 #'
-#' Saves PitchTier to file (spread sheet file format).
+#' Saves PitchTier to file (in UTF-8 encoding).
 #' pt is list with at least $t and $f vectors (of the same length).
 #' If there are no $tmin and $tmax values, there are
 #' set as min and max of $t vector.
 #'
 #' @param pt PitchTier object
 #' @param fileNamePitchTier file name to be created
+#' @param format Output file format ("short" (short text format), "text" (a.k.a. full text format), "spreadsheet" (default), "headerless" (not recommended, it does not contain tmin and tmax info))
 #'
 #' @export
 #' @seealso \code{\link{pt.read}}, \code{\link{tg.write}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.interpolate}}
@@ -3097,9 +3627,17 @@ pt.read <- function(fileNamePitchTier) {
 #' pt.plot(pt)
 #' pt.write(pt, "demo/H_st.PitchTier")
 #' }
-pt.write <- function(pt, fileNamePitchTier) {
+pt.write <- function(pt, fileNamePitchTier, format = "spreadsheet") {
     if (!isString(fileNamePitchTier)) {
         stop("Invalid 'fileNamePitchTier' parameter.")
+    }
+
+    if (!isString(format)) {
+        stop("Invalid 'format' parameter.")
+    }
+
+    if (format != "short" && format != "text" && format != "spreadsheet" && format != "headerless") {
+        stop("Unsupported format (supported: short, text, spreadsheet [default], headerless)")
     }
 
     if (!("t" %in% names(pt))) {
@@ -3126,17 +3664,43 @@ pt.write <- function(pt, fileNamePitchTier) {
     }
 
 
-    fid <- file(fileNamePitchTier, open = "w", encoding = "UTF-8")
+    fid <- file(fileNamePitchTier, open = "wb", encoding = "UTF-8")
     if (!isOpen(fid)) {
         stop(paste0("cannot open file [", fileNamePitchTier, "]"))
     }
 
-    writeLines('"ooTextFile"', fid)
-    writeLines('"PitchTier"', fid)
-    writeLines(paste0(as.character(round2(xmin, -20)), " ", as.character(round2(xmax, -20)), " ", as.character(N)), fid)
+    if (format == "spreadsheet") {
+        wrLine('"ooTextFile"', fid)
+        wrLine('"PitchTier"', fid)
+    } else if (format == "short" || format == "text") {
+        wrLine('File type = "ooTextFile"', fid)
+        wrLine('Object class = "PitchTier"', fid)
+        wrLine('', fid)
+    }
+
+    if (format == "spreadsheet") {
+        wrLine(paste0(as.character(round2(xmin, -15)), " ", as.character(round2(xmax, -15)), " ", as.character(N)), fid)
+    } else if (format == "short") {
+        wrLine(as.character(round2(xmin, -15)), fid)
+        wrLine(as.character(round2(xmax, -15)), fid)
+        wrLine(as.character(N), fid)
+    } else if (format == "text") {
+        wrLine(paste0("xmin = ", as.character(round2(xmin, -15)), " "), fid)
+        wrLine(paste0("xmax = ", as.character(round2(xmax, -15)), " "), fid)
+        wrLine(paste0("points: size = ", as.character(N), " "), fid)
+    }
 
     for (n in seqM(1, N)) {
-        writeLines(paste0(as.character(round2(pt$t[n], -20)), "\t", as.character(round2(pt$f[n], -20))), fid)
+        if (format == "spreadsheet" || format == "headerless") {
+            wrLine(paste0(as.character(round2(pt$t[n], -15)), "\t", as.character(round2(pt$f[n], -15))), fid)
+        } else if (format == "short") {
+            wrLine(as.character(round2(pt$t[n], -15)), fid)
+            wrLine(as.character(round2(pt$f[n], -15)), fid)
+        } else if (format == "text") {
+            wrLine(paste0("points [", as.character(n), "]:"), fid)
+            wrLine(paste0("    number = ", as.character(round2(pt$t[n], -15)), " "), fid)
+            wrLine(paste0("    value = ", as.character(round2(pt$f[n], -15)), " "), fid)
+        }
     }
 
     close(fid)
@@ -3437,12 +4001,12 @@ pt.legendreDemo <- function() {
 #' Cut the specified interval from the PitchTier and preserve time
 #'
 #' @param pt PitchTier object
-#' @param tStart beginning time of interval to be cut (default -Inf = cut from the tMin of the PitchTier)
-#' @param tEnd final time of interval to be cut (default Inf = cut to the tMax of the PitchTier)
+#' @param tStart beginning time of interval to be cut (default -Inf = cut from the tmin of the PitchTier)
+#' @param tEnd final time of interval to be cut (default Inf = cut to the tmax of the PitchTier)
 #'
 #' @return PitchTier object
 #' @export
-#' @seealso \code{\link{pt.cut0}}, \code{\link{pt.read}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.interpolate}}, \code{\link{pt.legendre}}, \code{\link{pt.legendreSynth}}, \code{\link{pt.legendreDemo}}
+#' @seealso \code{\link{pt.cut0}}, \code{\link{tg.cut}}, \code{\link{tg.cut0}}, \code{\link{pt.read}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.interpolate}}, \code{\link{pt.legendre}}, \code{\link{pt.legendreSynth}}, \code{\link{pt.legendreDemo}}
 #'
 #' @examples
 #' pt <- pt.sample()
@@ -3477,6 +4041,9 @@ pt.cut <- function(pt, tStart = -Inf, tEnd = Inf) {
     }
     if (is.infinite(tEnd) & tEnd<0) {
         stop("infinite tEnd can be positive only")
+    }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
     }
 
     pt2 <- pt
@@ -3544,6 +4111,9 @@ pt.cut0 <- function(pt, tStart = -Inf, tEnd = Inf) {
     if (is.infinite(tEnd) & tEnd<0) {
         stop("infinite tEnd can be positive only")
     }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
+    }
 
     pt2 <- pt
     pt2$t <- pt$t[pt$t >= tStart  &  pt$t <= tEnd]
@@ -3568,6 +4138,608 @@ pt.cut0 <- function(pt, tStart = -Inf, tEnd = Inf) {
     return(pt2)
 }
 
+
+
+
+
+#' it.read
+#'
+#' Reads IntensityTier from Praat. Supported formats: text file, short text file.
+#'
+#' @param fileNameIntensityTier file name of IntensityTier
+#' @param encoding File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding
+#'
+#' @return IntensityTier object
+#' @export
+#' @seealso \code{\link{it.write}}, \code{\link{it.plot}}, \code{\link{it.cut}}, \code{\link{it.cut0}}, \code{\link{it.interpolate}}, \code{\link{tg.read}}, \code{\link{pt.read}}, \code{\link{pitch.read}}, \code{\link{col.read}}
+#'
+#' @examples
+#' \dontrun{
+#' it <- it.read("demo/maminka.IntensityTier")
+#' it.plot(it)
+#' }
+it.read <- function(fileNameIntensityTier, encoding = "UTF-8") {
+    if (!isString(fileNameIntensityTier)) {
+        stop("Invalid 'fileNameIntensityTier' parameter.")
+    }
+
+    if (!isString(encoding)) {
+        stop("Invalid 'encoding' parameter.")
+    }
+
+    if (encoding == "auto") {
+        encoding <- detectEncoding(fileNameIntensityTier)
+    }
+
+    if (encoding == "UTF-8") {
+        flines <- readr::read_lines(fileNameIntensityTier, locale = readr::locale(encoding = "UTF-8"))  # Does not support UTF-16 at this point :-(
+    } else {
+        fid <- file(fileNameIntensityTier, open = "r", encoding = encoding)
+        flines <- readLines(fid)
+        close(fid)
+    }
+
+
+    if (length(flines) < 1) {
+        stop("Empty file.")
+    }
+
+    it_ind <- it.read_lines(flines)
+    return(it_ind[[1]])
+}
+
+it.read_lines <- function(flines, find = 1, collection = FALSE) {
+    if (collection  ||  flines[find-1+1] == "File type = \"ooTextFile\"") {    # TextFile or shortTextFile - only these 2 formats can be stored in collection file
+        if (!collection) {
+            if (length(flines)-find+1 < 6) {
+                stop("Unknown IntensityTier format.")
+            }
+
+            if (strTrim(flines[find-1+2]) != "Object class = \"IntensityTier\"") {
+                stop("Unknown IntensityTier format.")
+            }
+
+            if (strTrim(flines[find-1+3]) != "") {
+                stop("Unknown IntensityTier format.")
+            }
+
+            if (strTrim(nchar(flines[find-1+4])) < 1) {
+                stop("Unknown IntensityTier format.")
+            }
+        } else {
+            find <- find - 3
+        }
+
+        if (str_contains(flines[find-1+4], "xmin")) {  # TextFile
+            xmin <- as.numeric(substr(strTrim(flines[find-1+4]), 8,  nchar(strTrim(flines[find-1+4]))))
+            xmax <- as.numeric(substr(strTrim(flines[find-1+5]), 8,  nchar(strTrim(flines[find-1+5]))))
+            N <-    as.numeric(substr(strTrim(flines[find-1+6]), 16, nchar(strTrim(flines[find-1+6]))))
+
+            t <- numeric(N)
+            i <- numeric(N)
+
+            for (I in seqM(1, N, by = 1)) {
+                t[I] <- as.numeric(substr(strTrim(flines[find-1+8 + (I-1)*3]), 10, nchar(strTrim(flines[find-1+8 + (I-1)*3]))))
+                i[I] <- as.numeric(substr(strTrim(flines[find-1+9 + (I-1)*3]), 9, nchar(strTrim(flines[find-1+9 + (I-1)*3]))))
+            }
+
+            find <- find-1+9 + (N-1)*3 + 1
+
+        } else {   # shortTextFile
+
+            xmin <- as.numeric(flines[find-1+4])
+            xmax <- as.numeric(flines[find-1+5])
+            N <- as.integer(flines[find-1+6])
+
+            t <- numeric(N)
+            i <- numeric(N)
+
+            for (I in seqM(1, N, by = 1)) {
+                t[I] <- as.numeric(flines[find-1+7 + (I-1)*2])
+                i[I] <- as.numeric(flines[find-1+8 + (I-1)*2])
+            }
+
+            find <- find-1+8 + (N-1)*2 + 1
+        }
+
+
+    } else {
+        stop("unsupported IntensityTier format")
+    }
+
+
+    it <- list(t = t, i = i, tmin = xmin, tmax = xmax)
+
+    return(list(it, find))
+}
+
+#' it.write
+#'
+#' Saves IntensityTier to file (in UTF-8 encoding).
+#' it is list with at least $t and $i vectors (of the same length).
+#' If there are no $tmin and $tmax values, there are
+#' set as min and max of $t vector.
+#'
+#' @param it IntensityTier object
+#' @param fileNameIntensityTier file name to be created
+#' @param format Output file format ("short" (short text format - default), "text" (a.k.a. full text format))
+#'
+#' @export
+#' @seealso \code{\link{it.read}}, \code{\link{tg.write}}, \code{\link{it.interpolate}}
+#'
+#' @examples
+#' \dontrun{
+#' it <- it.sample()
+#' it.plot(pt)
+#' it.write(it, "demo/intensity.IntensityTier")
+#' }
+it.write <- function(it, fileNameIntensityTier, format = "short") {
+    if (!isString(fileNameIntensityTier)) {
+        stop("Invalid 'fileNameIntensityTier' parameter.")
+    }
+
+    if (!isString(format)) {
+        stop("Invalid 'format' parameter.")
+    }
+
+    if (format != "short" && format != "text") {
+        stop("Unsupported format (supported: short [default], text)")
+    }
+
+    if (!("t" %in% names(it))) {
+        stop("it must be a list with 't' and 'i' and optionally 'tmin' and 'tmax'")
+    }
+    if (!("i" %in% names(it))) {
+        stop("it must be a list with 't' and 'i' and optionally 'tmin' and 'tmax'")
+    }
+    if (length(it$t) != length(it$i)) {
+        stop("t and i lengths mismatched.")
+    }
+    N <- length(it$t)
+
+
+    if (!("tmin" %in% names(it))) {
+        xmin <- min(it$t)
+    } else {
+        xmin <- it$tmin
+    }
+    if (!("tmax" %in% names(it))) {
+        xmax <- max(it$t)
+    } else {
+        xmax <- it$tmax
+    }
+
+
+    fid <- file(fileNameIntensityTier, open = "wb", encoding = "UTF-8")
+    if (!isOpen(fid)) {
+        stop(paste0("cannot open file [", fileNameIntensityTier, "]"))
+    }
+
+    if (format == "short" || format == "text") {
+        wrLine('File type = "ooTextFile"', fid)
+        wrLine('Object class = "IntensityTier"', fid)
+        wrLine('', fid)
+    }
+
+    if (format == "short") {
+        wrLine(as.character(round2(xmin, -15)), fid)
+        wrLine(as.character(round2(xmax, -15)), fid)
+        wrLine(as.character(N), fid)
+    } else if (format == "text") {
+        wrLine(paste0("xmin = ", as.character(round2(xmin, -15)), " "), fid)
+        wrLine(paste0("xmax = ", as.character(round2(xmax, -15)), " "), fid)
+        wrLine(paste0("points: size = ", as.character(N), " "), fid)
+    }
+
+    for (n in seqM(1, N)) {
+        if (format == "short") {
+            wrLine(as.character(round2(it$t[n], -15)), fid)
+            wrLine(as.character(round2(it$i[n], -15)), fid)
+        } else if (format == "text") {
+            wrLine(paste0("points [", as.character(n), "]:"), fid)
+            wrLine(paste0("    number = ", as.character(round2(it$t[n], -15)), " "), fid)
+            wrLine(paste0("    value = ", as.character(round2(it$i[n], -15)), " "), fid)
+        }
+    }
+
+    close(fid)
+}
+
+
+#' it.plot
+#'
+#' Plots interactive IntensityTier using dygraphs package.
+#'
+#' @param it IntensityTier object
+#' @param group [optional] character string, name of group for dygraphs synchronization
+#'
+#' @export
+#' @seealso \code{\link{it.read}}, \code{\link{tg.plot}}, \code{\link{it.cut}}, \code{\link{it.cut0}}, \code{\link{it.interpolate}}, \code{\link{it.write}}
+#'
+#' @examples
+#' \dontrun{
+#' it <- it.sample()
+#' it.plot(it)
+#' }
+it.plot <- function(it, group = "") {
+    data <- list(t = it$t, i = it$i)
+
+    if (group != "") {  # dygraphs plot-synchronization group
+        g <- dygraphs::dygraph(data, group = group, xlab = "Time (sec)")
+    } else {
+        g <- dygraphs::dygraph(data, xlab = "Time (sec)")
+    }
+
+    g <- dygraphs::dyOptions(g, drawPoints = TRUE, pointSize = 2, strokeWidth = 0)
+    g <- dygraphs::dyRangeSelector(g, dateWindow = c(it$tmin, it$tmax))
+
+    g <- dygraphs::dyAxis(g, "x", valueFormatter = "function(d){return d.toFixed(3)}")
+    g
+}
+
+
+#' it.interpolate
+#'
+#' Interpolates IntensityTier contour in given time instances.
+#'
+#'  a) If t < min(it$t) (or t > max(it$t)), returns the first (or the last) value of it$i.
+#'  b) If t is existing point in it$t, returns the respective it$f.
+#'  c) If t is Between two existing points, returns linear interpolation of these two points.
+#'
+#' @param it IntensityTier object
+#' @param t vector of time instances of interest
+#'
+#' @return IntensityTier object
+#' @export
+#' @seealso \code{\link{it.read}}, \code{\link{it.write}}, \code{\link{it.plot}}, \code{\link{it.cut}}, \code{\link{it.cut0}}, \code{\link{it.legendre}}
+#'
+#' @examples
+#' it <- it.sample()
+#' it2 <- it.interpolate(it, seq(it$t[1], it$t[length(it$t)], by = 0.001))
+#' \dontrun{
+#' it.plot(it)
+#' it.plot(it2)
+#' }
+it.interpolate <- function(it, t) {
+    if (class(t) != "numeric"  &  class(t) != "integer") {
+        stop("t must be numeric vector")
+    }
+
+    if (length(it$t) != length(it$i))
+        stop("IntensityTier does not have equal length vectors $t and $i")
+
+    if (length(it$t) < 1)
+        return(NA)
+
+    if (!identical(sort(it$t), it$t)) {
+        stop("time instances $t in IntensityTier are not increasingly sorted")
+    }
+
+    if (!identical(unique(it$t), it$t)) {
+        stop("duplicated time instances in $t vector of the IntensityTier")
+    }
+
+    it2 <- it
+    it2$t <- t
+
+    i <- numeric(length(t))
+    for (I in seq_along(t)) {
+        if (length(it$t) == 1) {
+            i[I] <- it$i[1]
+        } else if (t[I] < it$t[1]) {   # a)
+            i[I] <- it$i[1]
+        } else if (t[I] > it$t[length(it$t)]) {   # a)
+            i[I] <- it$i[length(it$t)]
+        } else {
+            # b)
+            ind <- which(it$t == t[I])
+            if (length(ind) == 1) {
+                i[I] <- it$i[ind]
+            } else {
+                # c)
+                ind2 <- which(it$t > t[I]); ind2 <- ind2[1]
+                ind1 <- ind2 - 1
+                # y = ax + b;  a = (y2-y1)/(x2-x1);  b = y1 - ax1
+                a <- (it$i[ind2] - it$i[ind1]) / (it$t[ind2] - it$t[ind1])
+                b <- it$i[ind1] - a*it$t[ind1]
+                i[I] <- a*t[I] + b
+            }
+        }
+    }
+
+    it2$i <- i
+    return(it2)
+}
+
+
+#' it.legendre
+#'
+#' Interpolate the IntensityTier in 'npoints' equidistant points and approximate it by Legendre polynomials
+#'
+#' @param it IntensityTier object
+#' @param npoints Number of points of IntensityTier interpolation
+#' @param npolynomials Number of polynomials to be used for Legendre modelling
+#'
+#' @return Vector of Legendre polynomials coefficients
+#' @export
+#' @seealso \code{\link{it.legendreSynth}}, \code{\link{it.legendreDemo}}, \code{\link{it.cut}}, \code{\link{it.cut0}}, \code{\link{it.read}}, \code{\link{it.plot}}, \code{\link{it.interpolate}}
+#'
+#' @examples
+#' it <- it.sample()
+#' it <- it.cut(it, tStart = 0.2, tEnd = 0.4)  # cut IntensityTier and preserve time
+#' c <- it.legendre(it)
+#' print(c)
+#' leg <- it.legendreSynth(c)
+#' itLeg <- it
+#' itLeg$t <- seq(itLeg$tmin, itLeg$tmax, length.out = length(leg))
+#' itLeg$i <- leg
+#' \dontrun{
+#' plot(it$t, it$i, xlab = "Time (sec)", ylab = "Intensity (dB)")
+#' lines(itLeg$t, itLeg$i, col = "blue")
+#' }
+it.legendre <- function(it, npoints = 1000, npolynomials = 4) {
+    if (!isInt(npoints) | npoints < 0) {
+        stop("npoints must be integer >= 0.")
+    }
+
+    if (!isInt(npolynomials) | npolynomials <= 0) {
+        stop("npolynomials must be integer > 0.")
+    }
+
+    it <- it.interpolate(it, seq(it$tmin, it$tmax, length.out = npoints))
+
+    y <- it$i
+
+
+    lP <- npoints # počet vzorků polynomu
+    nP <- npolynomials
+
+    B <- matrix(nrow = nP, ncol = lP)  # báze
+    x <- seq(-1, 1, length.out = lP)
+
+    for (i in seqM(1, nP)) {
+        n <- i - 1
+        p <- numeric(lP)
+        for (k in seqM(0, n)) {
+            p <- p + x^k*choose(n, k)*choose((n+k-1)/2, n)
+        }
+        p <- p*2^n
+
+        B[i, ] <- p
+    }
+
+    c <- numeric(nP)
+    for (I in 1: nP) {
+        c[I] <- t(matrix(y)) %*% matrix(B[I, ], nrow = lP, ncol = 1) / lP * ((I-1)*2+1)
+        # koeficient ((I-1)*2+1) odpovídá výkonům komponent, které lze spočítat i takto: mean((P.^2).')
+    }
+
+    return(c)
+}
+
+#' it.legendreSynth
+#'
+#' Synthetize the contour from vector of Legendre polynomials 'c' in 'npoints' equidistant points
+#'
+#' @param c Vector of Legendre polynomials coefficients
+#' @param npoints Number of points of IntensityTier interpolation
+#'
+#' @return Vector of values of synthetized contour
+#' @export
+#' @seealso \code{\link{it.legendre}}, \code{\link{it.legendreDemo}}, \code{\link{it.read}}, \code{\link{it.plot}}, \code{\link{it.interpolate}}
+#'
+#' @examples
+#' it <- it.sample()
+#' it <- it.cut(it, tStart = 0.2, tEnd = 0.4)  # cut IntensityTier and preserve time
+#' c <- it.legendre(it)
+#' print(c)
+#' leg <- it.legendreSynth(c)
+#' itLeg <- it
+#' itLeg$t <- seq(itLeg$tmin, itLeg$tmax, length.out = length(leg))
+#' itLeg$i <- leg
+#' \dontrun{
+#' plot(it$t, it$i, xlab = "Time (sec)", ylab = "Intensity (dB)")
+#' lines(itLeg$t, itLeg$i, col = "blue")
+#' }
+it.legendreSynth <- function(c, npoints = 1000) {
+    if (class(c) != "numeric"  &  class(c) != "integer") {
+        stop("c must be numeric vector")
+    }
+
+    if (!isInt(npoints) | npoints < 0) {
+        stop("npoints must be integer >= 0.")
+    }
+
+    lP <- npoints # počet vzorků polynomu
+    nP <- length(c)
+
+    B <- matrix(nrow = nP, ncol = lP)  # báze
+    x <- seq(-1, 1, length.out = lP)
+
+    for (i in seqM(1, nP)) {
+        n <- i - 1
+        p <- numeric(lP)
+        for (k in seqM(0, n)) {
+            p <- p + x^k*choose(n, k)*choose((n+k-1)/2, n)
+        }
+        p <- p*2^n
+
+        B[i, ] <- p
+    }
+
+    if (nP > 0) {
+        yModelovane <- t(matrix(c)) %*% B
+    }
+    else {
+        yModelovane <- rep(NA, npoints)
+    }
+
+    return(as.numeric(yModelovane))
+}
+
+#' it.legendreDemo
+#'
+#' Plots first four Legendre polynomials
+#'
+#' @export
+#' @seealso \code{\link{it.legendre}}, \code{\link{it.legendreSynth}}, \code{\link{it.read}}, \code{\link{it.plot}}, \code{\link{it.interpolate}}
+#'
+#' @examples
+#' \dontrun{
+#' it.legendreDemo()
+#' }
+it.legendreDemo <- function() {
+    graphics::par(mfrow = c(2, 2))
+    graphics::plot(it.legendreSynth(c(1, 0, 0, 0), 1024))
+    graphics::plot(it.legendreSynth(c(0, 1, 0, 0), 1024))
+    graphics::plot(it.legendreSynth(c(0, 0, 1, 0), 1024))
+    graphics::plot(it.legendreSynth(c(0, 0, 0, 1), 1024))
+    graphics::par(mfrow = c(1, 1))
+}
+
+
+
+#' it.cut
+#'
+#' Cut the specified interval from the IntensityTier and preserve time
+#'
+#' @param it IntensityTier object
+#' @param tStart beginning time of interval to be cut (default -Inf = cut from the tMin of the IntensityTier)
+#' @param tEnd final time of interval to be cut (default Inf = cut to the tMax of the IntensityTier)
+#'
+#' @return IntensityTier object
+#' @export
+#' @seealso \code{\link{it.cut0}}, \code{\link{it.read}}, \code{\link{it.plot}}, \code{\link{it.interpolate}}, \code{\link{it.legendre}}, \code{\link{it.legendreSynth}}, \code{\link{it.legendreDemo}}
+#'
+#' @examples
+#' it <- it.sample()
+#' it2 <-   it.cut(it,  tStart = 0.3)
+#' it2_0 <- it.cut0(it, tStart = 0.3)
+#' it3 <-   it.cut(it,  tStart = 0.2, tEnd = 0.3)
+#' it3_0 <- it.cut0(it, tStart = 0.2, tEnd = 0.3)
+#' it4 <-   it.cut(it,  tEnd = 0.3)
+#' it4_0 <- it.cut0(it, tEnd = 0.3)
+#' it5 <-   it.cut(it,  tStart = -1, tEnd = 1)
+#' it5_0 <- it.cut0(it, tStart = -1, tEnd = 1)
+#' \dontrun{
+#' it.plot(it)
+#' it.plot(it2)
+#' it.plot(it2_0)
+#' it.plot(it3)
+#' it.plot(it3_0)
+#' it.plot(it4)
+#' it.plot(it4_0)
+#' it.plot(it5)
+#' it.plot(it5_0)
+#' }
+it.cut <- function(it, tStart = -Inf, tEnd = Inf) {
+    if (!isNum(tStart)) {
+        stop("tStart must be a number.")
+    }
+    if (!isNum(tEnd)) {
+        stop("tEnd must be a number.")
+    }
+    if (is.infinite(tStart) & tStart>0) {
+        stop("infinite tStart can be negative only")
+    }
+    if (is.infinite(tEnd) & tEnd<0) {
+        stop("infinite tEnd can be positive only")
+    }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
+    }
+
+    it2 <- it
+    it2$t <- it$t[it$t >= tStart  &  it$t <= tEnd]
+    it2$i <- it$i[it$t >= tStart  &  it$t <= tEnd]
+
+    if (is.infinite(tStart)) {
+        it2$tmin <- it$tmin
+    } else {
+        it2$tmin <- tStart
+    }
+
+    if (is.infinite(tEnd)) {
+        it2$tmax <- it$tmax
+    } else {
+        it2$tmax <- tEnd
+    }
+
+    return(it2)
+}
+
+#' it.cut0
+#'
+#' Cut the specified interval from the IntensityTier and shift time so that the new tmin = 0
+#'
+#' @param it IntensityTier object
+#' @param tStart beginning time of interval to be cut (default -Inf = cut from the tMin of the IntensityTier)
+#' @param tEnd final time of interval to be cut (default Inf = cut to the tMax of the IntensityTier)
+#'
+#' @return IntensityTier object
+#' @export
+#' @seealso \code{\link{it.cut}}, \code{\link{it.read}}, \code{\link{it.plot}}, \code{\link{it.interpolate}}, \code{\link{it.legendre}}, \code{\link{it.legendreSynth}}, \code{\link{it.legendreDemo}}
+#'
+#' @examples
+#' it <- it.sample()
+#' it2 <-   it.cut(it,  tStart = 0.3)
+#' it2_0 <- it.cut0(it, tStart = 0.3)
+#' it3 <-   it.cut(it,  tStart = 0.2, tEnd = 0.3)
+#' it3_0 <- it.cut0(it, tStart = 0.2, tEnd = 0.3)
+#' it4 <-   it.cut(it,  tEnd = 0.3)
+#' it4_0 <- it.cut0(it, tEnd = 0.3)
+#' it5 <-   it.cut(it,  tStart = -1, tEnd = 1)
+#' it5_0 <- it.cut0(it, tStart = -1, tEnd = 1)
+#' \dontrun{
+#' it.plot(it)
+#' it.plot(it2)
+#' it.plot(it2_0)
+#' it.plot(it3)
+#' it.plot(it3_0)
+#' it.plot(it4)
+#' it.plot(it4_0)
+#' it.plot(it5)
+#' it.plot(it5_0)
+#' }
+it.cut0 <- function(it, tStart = -Inf, tEnd = Inf) {
+    if (!isNum(tStart)) {
+        stop("tStart must be a number.")
+    }
+    if (!isNum(tEnd)) {
+        stop("tEnd must be a number.")
+    }
+    if (is.infinite(tStart) & tStart>0) {
+        stop("infinite tStart can be negative only")
+    }
+    if (is.infinite(tEnd) & tEnd<0) {
+        stop("infinite tEnd can be positive only")
+    }
+    if (tEnd < tStart) {
+        stop("tEnd must be >= tStart")
+    }
+
+    it2 <- it
+    it2$t <- it$t[it$t >= tStart  &  it$t <= tEnd]
+    it2$i <- it$i[it$t >= tStart  &  it$t <= tEnd]
+
+    if (is.infinite(tStart)) {
+        it2$tmin <- it$tmin
+    } else {
+        it2$tmin <- tStart
+    }
+
+    if (is.infinite(tEnd)) {
+        it2$tmax <- it$tmax
+    } else {
+        it2$tmax <- tEnd
+    }
+
+    it2$t <- it2$t - it2$tmin
+    it2$tmax <- it2$tmax - it2$tmin
+    it2$tmin <- 0
+
+    return(it2)
+}
 
 
 
@@ -3958,7 +5130,7 @@ isLogical <- function(logical) {
 #'
 #' @return rounded number to the specified order
 #' @export
-#' @seealso \code{\link[base]{round}}, \code{\link[base]{trunc}}, \code{\link[base]{ceiling}}, \code{\link[base]{floor}}
+#' @seealso \code{\link{round}}, \code{\link{trunc}}, \code{\link{ceiling}}, \code{\link{floor}}
 #'
 #' @examples
 #' round2(23.5)   # = 24, compare: round(23.5) = 24
@@ -4050,6 +5222,27 @@ str_find1 <- function(string, patternNoRegex) {
     return(index)
 }
 
+# inspired by Pol van Rijn's function from mPraat toolbox
+getNumberInLine <- function(str, shortFormat = FALSE) {
+    if (!shortFormat) {
+        numberIndex <- str_find1(str, " = ") + 3  # 3 because nchar(' = ') == 3
+        return(as.numeric(stringr::str_sub(str, numberIndex)))
+    } else {
+        return(as.numeric(str))
+    }
+}
+
+# inspired by Pol van Rijn's function from mPraat toolbox
+getTextInQuotes <- function(str) {
+    m <- gregexpr('".*?"', str)  # find quoted text
+    text <- regmatches(str, m)
+    if (length(text[[1]]) != 1) {
+        stop("None or multiple texts in quotes found.")
+    }
+    return(stringr::str_sub(text[[1]][1], 2, -2)) # remove quotes
+}
+
+
 #' ifft
 #'
 #' Inverse Fast Fourier Transform (discrete FT), Matlab-like behavior.
@@ -4060,7 +5253,7 @@ str_find1 <- function(string, patternNoRegex) {
 #'
 #' @return output vector of the same length as the input vector
 #' @export
-#' @seealso \code{\link[stats]{fft}}, \code{\link[base]{Re}}, \code{\link[base]{Im}}, \code{\link[base]{Mod}}, \code{\link[base]{Conj}}
+#' @seealso \code{\link[stats]{fft}}, \code{\link{Re}}, \code{\link{Im}}, \code{\link{Mod}}, \code{\link{Conj}}
 #'
 #' @examples
 #' ifft(fft(1:5))

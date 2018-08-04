@@ -4,17 +4,19 @@
 \alias{pt.read}
 \title{pt.read}
 \usage{
-pt.read(fileNamePitchTier)
+pt.read(fileNamePitchTier, encoding = "UTF-8")
 }
 \arguments{
 \item{fileNamePitchTier}{file name of PitchTier}
+
+\item{encoding}{File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding}
 }
 \value{
 PitchTier object
 }
 \description{
 Reads PitchTier from Praat. Supported formats: text file, short text file,
-spread sheet, headerless spread sheet (headerless not recommended,
+spreadsheet, headerless spreadsheet (headerless not recommended,
 it does not contain tmin and tmax info).
 }
 \examples{
@@ -24,5 +26,5 @@ pt.plot(pt)
 }
 }
 \seealso{
-\code{\link{pt.write}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{pt.interpolate}}, \code{\link{tg.read}}, \code{\link{pitch.read}}
+\code{\link{pt.write}}, \code{\link{pt.plot}}, \code{\link{pt.Hz2ST}}, \code{\link{pt.cut}}, \code{\link{pt.cut0}}, \code{\link{pt.interpolate}}, \code{\link{pt.legendre}}, \code{\link{tg.read}}, \code{\link{pitch.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 }

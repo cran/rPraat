@@ -4,10 +4,12 @@
 \alias{pitch.read}
 \title{pitch.read}
 \usage{
-pitch.read(fileNamePitch)
+pitch.read(fileNamePitch, encoding = "UTF-8")
 }
 \arguments{
 \item{fileNamePitch}{file name of Pitch object}
+
+\item{encoding}{File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding}
 }
 \value{
 A Pitch object represents periodicity candidates as a function of time.
@@ -58,5 +60,5 @@ p$frame[[4]]$strength[2]
 }
 }
 \seealso{
-\code{\link{pt.read}}, \code{\link{tg.read}}
+\code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 }

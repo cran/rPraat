@@ -4,10 +4,12 @@
 \alias{tg.read}
 \title{tg.read}
 \usage{
-tg.read(fileNameTextGrid)
+tg.read(fileNameTextGrid, encoding = "UTF-8")
 }
 \arguments{
 \item{fileNameTextGrid}{Input file name}
+
+\item{encoding}{File encoding (default: "UTF-8"), "auto" for auto-detect of Unicode encoding}
 }
 \value{
 TextGrid object
@@ -24,5 +26,5 @@ tg.plot(tg)
 }
 }
 \seealso{
-\code{\link{tg.write}}, \code{\link{tg.plot}}, \code{\link{tg.repairContinuity}}, \code{\link{tg.createNewTextGrid}}, \code{\link{tg.findLabels}}, \code{\link{tg.duplicateTierMergeSegments}}, \code{\link{pt.read}}, \code{\link{pitch.read}}
+\code{\link{tg.write}}, \code{\link{tg.plot}}, \code{\link{tg.repairContinuity}}, \code{\link{tg.createNewTextGrid}}, \code{\link{tg.findLabels}}, \code{\link{tg.duplicateTierMergeSegments}}, \code{\link{pt.read}}, \code{\link{pitch.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 }

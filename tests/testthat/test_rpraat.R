@@ -22,20 +22,56 @@ context("PitchTier")
 test_that("pt.read", {
     expect_equal({
         pt <- pt.read("H.PitchTier")
-        c(length(unique(pt$t)), pt$tmax)
-        }, c(209, 3.617125))
+        c(length(unique(pt$t)), pt$tmin, pt$tmax, length(pt$t), pt$t[1], pt$t[16], pt$t[29], pt$t[209], pt$f[1], pt$f[16], pt$f[29], pt$f[209])
+        }, c(209, 0, 3.617125, 209, 0.09356250000000005, 0.29356250000000006, 0.42356250000000006, 3.4935625000000003,
+             210.06273060415666, 263.3608508907508, 259.37630326892423, 161.7025770872298))
+    expect_equal({
+        pt <- pt.read("H_UTF16.PitchTier", encoding = "UTF-16")
+        c(length(unique(pt$t)), pt$tmin, pt$tmax, length(pt$t), pt$t[1], pt$t[16], pt$t[29], pt$t[209], pt$f[1], pt$f[16], pt$f[29], pt$f[209])
+    }, c(209, 0, 3.617125, 209, 0.09356250000000005, 0.29356250000000006, 0.42356250000000006, 3.4935625000000003,
+         210.06273060415666, 263.3608508907508, 259.37630326892423, 161.7025770872298))
     expect_equal({
         pt <- pt.read("H_headerlessSpreadSheet.PitchTier")
-        c(length(unique(pt$t)), pt$tmax)
-        }, c(209, 3.4935625))
+        c(length(unique(pt$t)), pt$tmin, pt$tmax, length(pt$t), pt$t[1], pt$t[16], pt$t[29], pt$t[209], pt$f[1], pt$f[16], pt$f[29], pt$f[209])
+    }, c(209, 0.09356250000000005, 3.4935625000000003, 209, 0.09356250000000005, 0.29356250000000006, 0.42356250000000006, 3.4935625000000003,
+         210.06273060415666, 263.3608508907508, 259.37630326892423, 161.7025770872298))
     expect_equal({
         pt <- pt.read("H_shortTextFile.PitchTier")
-        c(length(unique(pt$t)), pt$tmax)
-        }, c(209, 3.617125))
+        c(length(unique(pt$t)), pt$tmin, pt$tmax, length(pt$t), pt$t[1], pt$t[16], pt$t[29], pt$t[209], pt$f[1], pt$f[16], pt$f[29], pt$f[209])
+    }, c(209, 0, 3.617125, 209, 0.09356250000000005, 0.29356250000000006, 0.42356250000000006, 3.4935625000000003,
+         210.06273060415666, 263.3608508907508, 259.37630326892423, 161.7025770872298))
     expect_equal({
         pt <- pt.read("H_spreadSheet.PitchTier")
-        c(length(unique(pt$t)), pt$tmax)
-        }, c(209, 3.617125))
+        c(length(unique(pt$t)), pt$tmin, pt$tmax, length(pt$t), pt$t[1], pt$t[16], pt$t[29], pt$t[209], pt$f[1], pt$f[16], pt$f[29], pt$f[209])
+    }, c(209, 0, 3.617125, 209, 0.09356250000000005, 0.29356250000000006, 0.42356250000000006, 3.4935625000000003,
+         210.06273060415666, 263.3608508907508, 259.37630326892423, 161.7025770872298))
+})
+
+test_that("pt.write", {
+    expect_equal({
+        pt <- pt.read("Hround.PitchTier")
+        f <- tempfile()
+        pt.write(pt, f, "short")
+        pt2 <- pt.read(f)
+        unlink(f)
+        identical(pt, pt2)
+    }, TRUE)
+    expect_equal({
+        pt <- pt.read("Hround.PitchTier")
+        f <- tempfile()
+        pt.write(pt, f, "text")
+        pt2 <- pt.read(f)
+        unlink(f)
+        identical(pt, pt2)
+    }, TRUE)
+    expect_equal({
+        pt <- pt.read("Hround.PitchTier")
+        f <- tempfile()
+        pt.write(pt, f, "spreadsheet")
+        pt2 <- pt.read(f)
+        unlink(f)
+        identical(pt, pt2)
+    }, TRUE)
 })
 
 test_that("pt.Hz2ST", {
@@ -97,6 +133,7 @@ test_that("pt.cut", {
         pt <- pt.cut(pt.sample(),  tStart = -1, tEnd = 1)
         c(pt$tmin, pt$tmax, length(pt$t), length(pt$f), pt$t[1], pt$t[10], pt$t[71], pt$f[1], pt$f[10], pt$f[71])},
         c(-1, 1, 71, 71, 0.0935625, 0.1835625, 0.9935625, 210.0627306, 189.5803367, 150.0365144))
+    expect_error(pt.cut(pt.sample(), 3, 2))
 })
 
 test_that("pt.cut0", {
@@ -121,6 +158,126 @@ test_that("pt.cut0", {
         pt <- pt.cut0(pt.sample(),  tStart = -1, tEnd = 1)
         c(pt$tmin, pt$tmax, length(pt$t), length(pt$f), pt$t[1], pt$t[10], pt$t[71], pt$f[1], pt$f[10], pt$f[71])},
         c(0, 2, 71, 71, 1.0935625, 1.1835625, 1.9935625, 210.0627306, 189.5803367, 150.0365144))
+    expect_error(pt.cut0(pt.sample(), 3, 2))
+})
+
+
+context("IntensityTier")
+
+test_that("it.read", {
+    expect_equal({
+        it <- it.read("maminka.IntensityTier")
+        c(length(unique(it$t)), it$tmin, it$tmax, length(it$t), it$t[1], it$t[16], it$t[29], it$t[40], it$i[1], it$i[16], it$i[29], it$i[40])
+    }, c(40, 0, 0.5460770975056689, 40, 0.0501814058956916, 0.22160997732426302, 0.3701814058956916, 0.4958956916099773, 59.5715903919772, 71.63843325188716, 64.17176220056767, 64.98963270408825))
+    expect_equal({
+        it <- it.read("maminka_short.IntensityTier")
+        c(length(unique(it$t)), it$tmin, it$tmax, length(it$t), it$t[1], it$t[16], it$t[29], it$t[40], it$i[1], it$i[16], it$i[29], it$i[40])
+    }, c(40, 0, 0.5460770975056689, 40, 0.0501814058956916, 0.22160997732426302, 0.3701814058956916, 0.4958956916099773, 59.5715903919772, 71.63843325188716, 64.17176220056767, 64.98963270408825))
+})
+
+test_that("it.write", {
+    expect_equal({
+        it <- it.read("maminka.IntensityTier")
+        f <- tempfile()
+        it.write(it, f, "short")
+        it2 <- it.read(f)
+        unlink(f)
+        c(length(it), it$t, it$i, it$tmin, it$tmax)
+    }, c(length(it2), it2$t, it2$i, it2$tmin, it2$tmax))
+    expect_equal({
+        it <- it.read("maminka.IntensityTier")
+        f <- tempfile()
+        it.write(it, f)
+        it2 <- it.read(f)
+        unlink(f)
+        c(length(it), it$t, it$i, it$tmin, it$tmax)
+    }, c(length(it2), it2$t, it2$i, it2$tmin, it2$tmax))
+    expect_equal({
+        it <- it.read("maminka.IntensityTier")
+        f <- tempfile()
+        it.write(it, f, "text")
+        it2 <- it.read(f)
+        unlink(f)
+        c(length(it), it$t, it$i, it$tmin, it$tmax)
+    }, c(length(it2), it2$t, it2$i, it2$tmin, it2$tmax))
+})
+
+test_that("it.interpolate", {
+    expect_equal({
+        it <- it.sample()
+        t <- c(-1, 0, 0.1, it$t[3], it$t[length(it$t)], it$t[length(it$t)]+1)
+        it2 <- it.interpolate(it, t)
+        c(it2$tmin, it2$tmax, length(it2$t), length(it2$i), it2$t, it2$i)
+    }, c(it$tmin, it$tmax, length(t), length(t), t, 59.57159039, 59.57159039, 69.76859026, 66.73070258, 64.98963270, 64.98963270))
+})
+
+test_that("it.legendre", {
+    expect_error(it.legendre(it.sample(), -1))
+    expect_error(it.legendre(it.sample(), npoints = 0, npolynomials = 0))
+    expect_error(it.legendre(it.sample(), npoints = -1, npolynomials = 1))
+    expect_error(it.legendreSynth(1, NA))
+    expect_error(it.legendreSynth(1, numeric(0)))
+    expect_equal({sum(is.nan(it.legendre(it.sample(), 0)))}, 4)
+    expect_equal({is.nan(it.legendre(it.sample(), npoints = 0, npolynomials = 1))}, TRUE)
+    expect_equal({it.legendre(list(tmin=0, tmax=0.4, t=c(0, 0.1, 0.2, 0.3, 0.4), i=c(1, 2, 3, 6, -1)))}, c(2.7472472, 0.8711174, -2.2633733, -2.4655033))
+    expect_equal({it.legendre(list(tmin=0, tmax=0.4, t=c(0, 0.1, 0.2, 0.3, 0.4), i=c(1, 2, 3, 6, -1)), npolynomials = 1)}, 2.7472472472472)
+    expect_equal({it.legendre(list(tmin=0, tmax=0.4, t=c(0, 0.1, 0.2, 0.3, 0.4), i=c(1, 2, 3, 6, -1)), npoints = 2)}, c(0, -3,  0, -7))
+    expect_equal({length(it.legendreSynth(5, 0))}, 0)
+    expect_equal({it.legendreSynth(5, 1)}, 5)
+    expect_equal({it.legendreSynth(5, 3)}, c(5, 5, 5))
+    expect_equal({it.legendreSynth(c(1, 2, 3), 1)}, 2)
+    expect_equal({it.legendreSynth(c(1, 2, 3), 2)}, c(2, 6))
+    expect_equal({it.legendreSynth(c(1, 2, 3), 5)}, c(2, -0.375, -0.5, 1.625, 6))
+})
+
+test_that("it.cut", {
+    expect_error(it.cut(it.sample(), numeric(0)))
+    expect_error(it.cut(it.sample(), NA))
+    expect_equal({
+        it <- it.cut(it.sample(),  tStart = 0.3)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[10], it$t[18], it$i[1], it$i[10], it$i[18])},
+        c(0.3, 0.5460771, 18, 18, 0.3016100, 0.4044671, 0.4958957, 70.8841436, 58.2129565, 64.9896327))
+
+    expect_equal({
+        it <- it.cut(it.sample(),  tStart = .2, tEnd = .3)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[4], it$t[8], it$i[1], it$i[4], it$i[8])},
+        c(0.2, 0.3, 8, 8, 0.2101814, 0.2444671, 0.2901814, 71.6253944, 71.1700598, 69.5956455))
+
+    expect_equal({
+        it <- it.cut(it.sample(),  tEnd = 1)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[35], it$t[40], it$i[1], it$i[35], it$i[40])},
+        c(0, 1, 40, 40, 0.05018141, 0.43875283, 0.49589569, 59.57159039, 64.97294548, 64.98963270))
+
+    expect_equal({
+        it <- it.cut(it.sample(),  tStart = -1, tEnd = 1)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[35], it$t[40], it$i[1], it$i[35], it$i[40])},
+        c(-1, 1, 40, 40, 0.05018141, 0.43875283, 0.49589569, 59.57159039, 64.97294548, 64.98963270))
+    expect_error(it.cut(it.sample(), 0.3, 0.2))
+})
+
+test_that("it.cut0", {
+    expect_error(it.cut0(it.sample(), numeric(0)))
+    expect_error(it.cut0(it.sample(), NA))
+    expect_equal({
+        it <- it.cut0(it.sample(),  tStart = 0.3)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[10], it$t[18], it$i[1], it$i[10], it$i[18])},
+        c(0, 0.2460771, 18, 18, 0.001609977, 0.104467120, 0.195895692, 70.8841436, 58.2129565, 64.9896327))
+
+    expect_equal({
+        it <- it.cut0(it.sample(),  tStart = .2, tEnd = .3)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[4], it$t[8], it$i[1], it$i[4], it$i[8])},
+        c(0, 0.1, 8, 8, 0.01018141, 0.04446712, 0.09018141, 71.62539439, 71.17005977, 69.59564547))
+
+    expect_equal({
+        it <- it.cut0(it.sample(),  tEnd = 1)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[35], it$t[40], it$i[1], it$i[35], it$i[40])},
+        c(0, 1, 40, 40, 0.05018141, 0.43875283, 0.49589569, 59.57159039, 64.97294548, 64.98963270))
+
+    expect_equal({
+        it <- it.cut0(it.sample(),  tStart = -1, tEnd = 1)
+        c(it$tmin, it$tmax, length(it$t), length(it$i), it$t[1], it$t[35], it$t[40], it$i[1], it$i[35], it$i[40])},
+        c(0, 2, 40, 40, 1.050181, 1.438753, 1.495896, 59.57159039, 64.97294548, 64.98963270))
+    expect_error(it.cut0(it.sample(), 0.3, 0.2))
 })
 
 
@@ -130,12 +287,12 @@ context("TextGrid")
 test_that("tg.read", {
     expect_equal({
         tg <- tg.read("H.TextGrid")
-        c(length(tg), length(unique(tg$word$t2)), tg[[1]]$label[[7]], tg[[2]]$type)
-        }, c("5", "13", "k", "interval"))
+        c(length(tg), length(unique(tg$word$t2)), tg[[1]]$label[[7]], tg[[2]]$type, tg$word$label[4], tg$word$label[6])
+        }, c("5", "13", "k", "interval", "\u0159eknu", "ud\u011bl\u00e1\u0161"))
     expect_equal({
         tg <- tg.read("H_short.TextGrid")
-        c(length(tg), length(unique(tg$word$t2)), tg[[1]]$label[[7]], tg[[2]]$type)
-        }, c("5", "13", "k", "interval"))
+        c(length(tg), length(unique(tg$word$t2)), tg[[1]]$label[[7]], tg[[2]]$type, tg$word$label[4], tg$word$label[6])
+        }, c("5", "13", "k", "interval", "\u0159eknu", "ud\u011bl\u00e1\u0161"))
     expect_equal({
         tg <- tg.read("utf8.TextGrid")
         tg$phone$label[2]
@@ -150,10 +307,39 @@ test_that("tg.read", {
     }, c("wracal\npokus", "siebe\"\"\nah\"\"\na", "siebie\"\"\na\"\"h\"\"\na"))
 })
 
+test_that("tg.write", {
+    expect_equal({
+        tg <- tg.read("2pr.TextGrid")
+        f <- tempfile()
+        tg.write(tg, f, format = "text")
+        tg2 <- tg.read(f)
+        unlink(f)
+        identical(tg, tg2)
+    }, TRUE)
+    expect_equal({
+        tg <- tg.createNewTextGrid(0, 3)
+        tg <- tg.insertNewIntervalTier(tg, 1, "word")
+        tg <- tg.insertInterval(tg, 1, 0.8, 1.5, "s\u0105\u0123")
+        f <- tempfile()
+        tg.write(tg, f, format = "text")
+        tg2 <- tg.read(f)
+        unlink(f)
+        tg2[[1]]$label[2] == "s\u0105\u0123"
+    }, TRUE)
+    expect_equal({
+        tg <- tg.read("2pr.TextGrid")
+        f <- tempfile()
+        tg.write(tg, f, format = "short")
+        tg2 <- tg.read(f)
+        unlink(f)
+        identical(tg, tg2)
+    }, TRUE)
+})
+
 
 test_that("tg.repairContinuity", {
     expect_equal({
-        tg <- tg.repairContinuity(tg.sampleProblem(), verbose = TRUE)
+        tg <- tg.repairContinuity(tg.sampleProblem(), verbose = FALSE)
         tg[[2]]$t2[16] > tg[[2]]$t1[17]
         }, FALSE)
     expect_error(tg.repairContinuity(pt.sample()))
@@ -438,6 +624,11 @@ test_that("tg.findLabels", {
 })
 
 test_that("tg.duplicateTierMergeSegments", {
+    expect_equal(
+        unlist(stringr::str_split('-a--a-', stringr::coll('-'))),
+        c("", "a", "", "a", "")
+    )
+
     expect_error({
         tg <- tg.read("H3.TextGrid")   # prázdné segmenty uvnitř slabiky vadí
         pattern <- "ja:-ci-P\\ek-nu-t_so-?u-J\\e-la:S- -nej-dP\\i:f-naj-deZ-h\\ut_S-ku-?a-?a-ta-ma-na:"
@@ -508,6 +699,139 @@ test_that("tg.duplicateTierMergeSegments", {
         c(6, "syll", 0, 21, TRUE, 0.008, TRUE, "interval"))
 })
 
+test_that("tg.cut", {
+    expect_error({tg.cut(tg.sample(), 3, 2)})
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("0.5-4p.TextGrid")
+        tg2 <- tg.cut(tg, 0.5, 4)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1.25-3.75p.TextGrid")
+        tg2 <- tg.cut(tg, 1.25, 3.75)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1.5-3.5p.TextGrid")
+        tg2 <- tg.cut(tg, 1.5, 3.5)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1-4p.TextGrid")
+        tg2 <- tg.cut(tg, 1, 4)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("-1-6p.TextGrid")
+        tg2 <- tg.cut(tg, -1, 6)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("0-3p.TextGrid")
+        tg2 <- tg.cut(tg, tEnd = 3)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("3-5p.TextGrid")
+        tg2 <- tg.cut(tg, tStart = 3)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg2 <- tg.cut(tg, tEnd = -1)
+        c(tg.getStartTime(tg2), tg.getEndTime(tg2))
+    }, c(-1, -1))
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg2 <- tg.cut(tg, tStart = 6)
+        c(tg.getStartTime(tg2), tg.getEndTime(tg2))
+    }, c(6, 6))
+
+})
+
+test_that("tg.cut0", {
+    expect_error({tg.cut0(tg.sample(), 3, 2)})
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("0.5-4.TextGrid")
+        tg2 <- tg.cut0(tg, 0.5, 4)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1.25-3.75.TextGrid")
+        tg2 <- tg.cut0(tg, 1.25, 3.75)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1.5-3.5.TextGrid")
+        tg2 <- tg.cut0(tg, 1.5, 3.5)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("1-4.TextGrid")
+        tg2 <- tg.cut0(tg, 1, 4)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("-1-6.TextGrid")
+        tg2 <- tg.cut0(tg, -1, 6)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("0-3.TextGrid")
+        tg2 <- tg.cut0(tg, tEnd = 3)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg1 <- tg.read("3-5.TextGrid")
+        tg2 <- tg.cut0(tg, tStart = 3)
+        identical(tg1, tg2)
+    }, TRUE)
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg2 <- tg.cut0(tg, tEnd = -1)
+        c(tg.getStartTime(tg2), tg.getEndTime(tg2))
+    }, c(0, 0))
+
+    expect_equal({
+        tg <- tg.read("cut.TextGrid")
+        tg2 <- tg.cut0(tg, tStart = 6)
+        c(tg.getStartTime(tg2), tg.getEndTime(tg2))
+    }, c(0, 0))
+
+})
+
+
 context("Pitch")
 
 test_that("pitch.read", {
@@ -523,9 +847,37 @@ test_that("pitch.read", {
     expect_equal({
         p <- pitch.read("sound.Pitch")
         p2 <- pitch.read("sound_short.Pitch")
-        identical(p, p2)
+        p3 <- pitch.read("sound_UTF16.Pitch", encoding = "UTF-16")
+        c(identical(p, p2), identical(p, p3))
+    }, c(TRUE, TRUE))
+})
+
+
+context("Collection")
+
+test_that("col.read", {
+    expect_equal({
+        c1 <- col.read("coll_short.Collection")
+        it <- it.read("1.IntensityTier")
+        pitch <- pitch.read("sound.Pitch")
+        pt <- pt.read("H.PitchTier")
+        tg <- tg.read("HC101bA.TextGrid")
+        c(length(c1), class(c1[[1]])[["type"]], class(c1[[1]])[["name"]], class(c1[[2]])[["type"]], class(c1[[2]])[["name"]],
+          class(c1[[3]])[["type"]], class(c1[[3]])[["name"]], class(c1[[4]])[["type"]], class(c1[[4]])[["name"]],
+          identical(length(c1[[1]]), length(it)), identical(c1[[1]]$t, it$t), identical(c1[[1]]$i, it$i), identical(c1[[1]]$tmin, it$tmin), identical(c1[[1]]$tmax, it$tmax),
+          identical(length(c1[[2]]), length(tg)), identical(c1[[2]]$phone, tg$phone), identical(c1[[2]]$word, tg$word), identical(c1[[2]]$points, tg$points), identical(c1[[2]]$phrase, tg$phrase),
+          identical(length(c1[[3]]), length(pitch)), identical(c1[[3]]$xmin, pitch$xmin), identical(c1[[3]]$xmax, pitch$xmax), identical(c1[[3]]$nx, pitch$nx), identical(c1[[3]]$dx, pitch$dx),
+                   identical(c1[[3]]$x1, pitch$x1), identical(c1[[3]]$t, pitch$t), identical(c1[[3]]$ceiling, pitch$ceiling), identical(c1[[3]]$maxnCandidates, pitch$maxnCandidates), identical(c1[[3]]$frame, pitch$frame),
+          identical(length(c1[[4]]), length(pt)), identical(c1[[4]]$t, pt$t), identical(c1[[4]]$f, pt$f), identical(c1[[4]]$tmin, pt$tmin), identical(c1[[4]]$tmax, pt$tmax)
+          )
+    }, c("4", "IntensityTier", "1", "TextGrid", "HC101bA", "Pitch 1", "sound_short", "PitchTier", "H_shortTextFile", rep("TRUE", 25)))
+    expect_equal({
+        c1 <- col.read("coll_short.Collection")
+        c2 <- col.read("coll_text.Collection")
+        identical(c1, c2)
     }, TRUE)
 })
+
 
 context("strings")
 
