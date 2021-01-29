@@ -8,14 +8,14 @@
 #' @param encoding File encoding (default: \code{"UTF-8"}), \code{"auto"} for auto-detect of Unicode encoding
 #'
 #' @return A Pitch object represents periodicity candidates as a function of time.
-#' @return   [ref: Praat help, http://www.fon.hum.uva.nl/praat/manual/Pitch.html]
+#' @return   [ref: Praat help, https://www.fon.hum.uva.nl/praat/manual/Pitch.html]
 #' @return   \code{p$xmin} ... start time (seconds)
 #' @return   \code{p$xmax} ... end time (seconds)
 #' @return   \code{p$nx}   ... number of frames
 #' @return   \code{p$dx}   ... time step = frame duration (seconds)
 #' @return   \code{p$x1}   ... time associated with the first frame (seconds)
 #' @return   \code{p$t}    ... vector of time instances associated with all frames
-#' @return   \code{p$ceiling}        ... a frequency above which a candidate is considered  voiceless (Hz)
+#' @return   \code{p$ceiling}        ... a frequency above which a candidate is considered voiceless (Hz)
 #' @return   \code{p$maxnCandidates} ... maximum number of candidates in frame
 #' @return   \code{p$frame[[1]]} to \code{p$frame[[p$nx]]} ... frames
 #' @return      \code{p$frame[[1]]$intensity}   ... intensity of the frame
@@ -24,7 +24,7 @@
 #' @return                               (for a voiced candidate), or \code{0} (for an unvoiced candidate)
 #' @return      \code{p$frame[[1]]$strength}  ... vector of degrees of periodicity of candidates (between \code{0} and \code{1})
 #' @export
-#' @seealso \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
+#' @seealso \code{\link{pitch.write}}, \code{\link{pitch.plot}}, \code{\link{pitch.cut}}, \code{\link{pitch.getPointIndexNearestTime}}, \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 #'
 #' @examples
 #' \dontrun{
@@ -139,8 +139,19 @@ pitch.read_lines <- function(flines, find = 1, collection = FALSE) {
                     }
                     iline <- iline + 1
 
-                    frequency[Ic] <- as.numeric(substr(strTrim(flines[iline]), 13, nchar(strTrim(flines[iline])))); iline <- iline + 1
-                    strength[Ic] <-  as.numeric(substr(strTrim(flines[iline]), 12, nchar(strTrim(flines[iline])))); iline <- iline + 1
+                    nmbr <- substr(strTrim(flines[iline]), 13, nchar(strTrim(flines[iline]))); iline <- iline + 1
+                    if (nmbr != "--undefined--") {
+                        frequency[Ic] <- as.numeric(nmbr)
+                    } else {
+                        frequency[Ic] <- NA
+                    }
+
+                    nmbr <- substr(strTrim(flines[iline]), 12, nchar(strTrim(flines[iline]))); iline <- iline + 1
+                    if (nmbr != "--undefined--") {
+                        strength[Ic] <-  as.numeric(nmbr)
+                    } else {
+                        strength[Ic] <-  NA
+                    }
                 }
 
                 frame[[I]] <- list(intensity = intensity, nCandidates = nCandidates,
@@ -168,8 +179,19 @@ pitch.read_lines <- function(flines, find = 1, collection = FALSE) {
                 strength <- numeric(nCandidates)
 
                 for (Ic in seqM(1, nCandidates)) {
-                    frequency[Ic] <- as.numeric(flines[iline]); iline <- iline + 1
-                    strength[Ic] <- as.numeric(flines[iline]); iline <- iline + 1
+                    nmbr <- flines[iline]; iline <- iline + 1
+                    if (nmbr != "--undefined--") {
+                        frequency[Ic] <- as.numeric(nmbr)
+                    } else {
+                        frequency[Ic] <- NA
+                    }
+
+                    nmbr <- flines[iline]; iline <- iline + 1
+                    if (nmbr != "--undefined--") {
+                        strength[Ic] <- as.numeric(nmbr)
+                    } else {
+                        strength[Ic] <- NA
+                    }
                 }
 
                 frame[[I]] <- list(intensity = intensity, nCandidates = nCandidates,
@@ -671,7 +693,7 @@ pitch.write0 <- function(pitch, fileNamePitch, format = "short", fid = NULL, col
         wrLine(as.character(pitch$nx), fid)
         wrLine(as.character(round2(pitch$dx, -15)), fid)
         wrLine(as.character(round2(pitch$x1, -15)), fid)
-        wrLine(as.character(round2(pitch$ceiling), -15), fid)
+        wrLine(as.character(round2(pitch$ceiling, -15)), fid)
         wrLine(as.character(pitch$maxnCandidates), fid)
     } else if (format == "text") {
         wrLine(paste0("xmin = ", as.character(round2(pitch$xmin, -15)), " "), fid, collection)
@@ -701,12 +723,29 @@ pitch.write0 <- function(pitch, fileNamePitch, format = "short", fid = NULL, col
 
         for (I in seqM(1, pitch$frame[[N]]$nCandidate)) {
             if (format == "short") {
-                wrLine(as.character(pitch$frame[[N]]$frequency[I], -15), fid)
-                wrLine(as.character(pitch$frame[[N]]$strength[I], -15), fid)
+                if (!is.na(pitch$frame[[N]]$frequency[I])) {
+                    wrLine(as.character(round2(pitch$frame[[N]]$frequency[I], -15)), fid)
+                } else {
+                    wrLine("--undefined--", fid)
+                }
+                if (!is.na(pitch$frame[[N]]$strength[I])) {
+                    wrLine(as.character(round2(pitch$frame[[N]]$strength[I], -15)), fid)
+                } else {
+                    wrLine("--undefined--", fid)
+                }
             } else if (format == "text") {
                 wrLine(paste0("            candidate [", as.character(I), "]:"), fid, collection)
-                wrLine(paste0("                frequency = ", as.character(pitch$frame[[N]]$frequency[I], -15), " "), fid, collection)
-                wrLine(paste0("                strength = ", as.character(pitch$frame[[N]]$strength[I], -15), " "), fid, collection)
+                if (!is.na(pitch$frame[[N]]$frequency[I])) {
+                    wrLine(paste0("                frequency = ", as.character(round2(pitch$frame[[N]]$frequency[I], -15)), " "), fid, collection)
+                } else {
+                    wrLine(paste0("                frequency = --undefined-- "), fid, collection)
+                }
+                if (!is.na(pitch$frame[[N]]$strength[I])) {
+                    wrLine(paste0("                strength = ", as.character(round2(pitch$frame[[N]]$strength[I], -15)), " "), fid, collection)
+                } else {
+                    wrLine(paste0("                strength = --undefined-- "), fid, collection)
+                }
+
             }
         }
     }
@@ -715,3 +754,118 @@ pitch.write0 <- function(pitch, fileNamePitch, format = "short", fid = NULL, col
         close(fid)
     }
 }
+
+
+#' pitch.getPointIndexHigherThanTime
+#'
+#' Returns index of frame which is nearest the given time from right, i.e.
+#' \code{time} <= frameTime.
+#'
+#' @param pitch Pitch object
+#' @param time time which is going to be found in frames
+#'
+#' @return integer
+#' @export
+#' @seealso \code{\link{pitch.getPointIndexNearestTime}}, \code{\link{pitch.getPointIndexLowerThanTime}}
+#'
+#' @examples
+#' pitch <- pitch.sample()
+#' pitch.getPointIndexHigherThanTime(pitch, 0.5)
+pitch.getPointIndexHigherThanTime <- function(pitch, time) {
+    if (!isNum(time)) {
+        stop("Time must be a number.")
+    }
+
+    ind <- NA
+
+    npoints <- length(pitch$t)
+    for (I in seqM(1, npoints)) {
+        if (time <= pitch$t[I]) {
+            ind <- I
+            break
+        }
+    }
+
+
+    return(ind)
+}
+
+
+
+
+#' pitch.getPointIndexLowerThanTime
+#'
+#' Returns index of frame which is nearest the given time from left, i.e.
+#' frameTime <= \code{time}.
+#'
+#' @param pitch Pitch object
+#' @param time time which is going to be found in frames
+#'
+#' @return integer
+#' @export
+#' @seealso \code{\link{pitch.getPointIndexNearestTime}}, \code{\link{pitch.getPointIndexHigherThanTime}}
+#'
+#' @examples
+#' pitch <- pitch.sample()
+#' pitch.getPointIndexLowerThanTime(pitch, 0.5)
+pitch.getPointIndexLowerThanTime <- function(pitch, time) {
+    if (!isNum(time)) {
+        stop("Time must be a number.")
+    }
+
+    ind <- NA
+
+    npoints <- length(pitch$t)
+    for (I in seqM(npoints, 1, by = -1)) {
+        if (time >= pitch$t[I]) {
+            ind <- I
+            break
+        }
+    }
+
+
+    return(ind)
+}
+
+
+
+
+#' pitch.getPointIndexNearestTime
+#'
+#' Returns index of frame which is nearest the given \code{time} (from both sides).
+#'
+#' @param pitch Pitch object
+#' @param time time which is going to be found in frames
+#'
+#' @return integer
+#' @export
+#' @seealso \code{\link{pitch.getPointIndexLowerThanTime}}, \code{\link{pitch.getPointIndexHigherThanTime}}
+#'
+#' @examples
+#' pitch <- pitch.sample()
+#' pitch.getPointIndexNearestTime(pitch, 0.5)
+pitch.getPointIndexNearestTime <- function(pitch, time) {
+    if (!isNum(time)) {
+        stop("Time must be a number.")
+    }
+
+    ind <- NA
+
+    npoints <- length(pitch$t)
+    minDist <- Inf
+    minInd <- NA
+
+    for (I in seqM(1, npoints)) {
+        dist <- abs(pitch$t[I] - time)
+        if (dist < minDist) {
+            minDist <- dist
+            minInd <- I
+        }
+    }
+
+    ind <- minInd
+
+
+    return(ind)
+}
+

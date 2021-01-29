@@ -14,7 +14,7 @@ formant.read(fileNameFormant, encoding = "UTF-8")
 \value{
 A Formant object represents formants as a function of time.
 
-[ref: Praat help, http://www.fon.hum.uva.nl/praat/manual/Formant.html]
+[ref: Praat help, https://www.fon.hum.uva.nl/praat/manual/Formant.html]
 
 \code{f$xmin} ... start time (seconds)
 
@@ -56,5 +56,5 @@ f$frame[[4]]$bandwidth[2]
 }
 }
 \seealso{
-\code{\link{pitch.read}}, \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
+\code{\link{formant.write}}, \code{\link{formant.plot}}, \code{\link{formant.cut}}, \code{\link{formant.getPointIndexNearestTime}}, \code{\link{pitch.read}}, \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 }

@@ -14,7 +14,7 @@ pitch.read(fileNamePitch, encoding = "UTF-8")
 \value{
 A Pitch object represents periodicity candidates as a function of time.
 
-[ref: Praat help, http://www.fon.hum.uva.nl/praat/manual/Pitch.html]
+[ref: Praat help, https://www.fon.hum.uva.nl/praat/manual/Pitch.html]
 
 \code{p$xmin} ... start time (seconds)
 
@@ -28,7 +28,7 @@ A Pitch object represents periodicity candidates as a function of time.
 
 \code{p$t}    ... vector of time instances associated with all frames
 
-\code{p$ceiling}        ... a frequency above which a candidate is considered  voiceless (Hz)
+\code{p$ceiling}        ... a frequency above which a candidate is considered voiceless (Hz)
 
 \code{p$maxnCandidates} ... maximum number of candidates in frame
 
@@ -60,5 +60,5 @@ p$frame[[4]]$strength[2]
 }
 }
 \seealso{
-\code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
+\code{\link{pitch.write}}, \code{\link{pitch.plot}}, \code{\link{pitch.cut}}, \code{\link{pitch.getPointIndexNearestTime}}, \code{\link{pt.read}}, \code{\link{tg.read}}, \code{\link{it.read}}, \code{\link{col.read}}
 }
